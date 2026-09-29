@@ -20,7 +20,7 @@ is restored to its exact prior state, not just deleted. See
 Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
-uv tool install git+https://gitlab.com/lab-dev-tools/devtunnel
+uv tool install git+https://github.com/TommySmith-Skillable/devtunnel
 ```
 
 ## Usage
