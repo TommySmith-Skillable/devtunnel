@@ -1,0 +1,62 @@
+# devtunnel
+
+A cross-platform CLI that provisions **git**, **ngrok**, and **OpenSSH** to
+open a dev-tunnel for SSH — and fully reverses itself on `uninstall`, removing
+only what it installed and never touching anything that was already there.
+
+Supports Windows 10/11 and Debian-based Linux (Debian, Ubuntu, Mint, ...).
+
+## Why not just run a shell script?
+
+Because uninstalling one is the hard part. Every change devtunnel makes is
+recorded in a journal *before* it happens, together with whatever the machine
+looked like beforehand. `devtunnel uninstall` replays that journal backwards:
+anything devtunnel found already present is left alone; anything it changed
+is restored to its exact prior state, not just deleted. See
+[`docs/architecture.md`](docs/architecture.md) for the full design.
+
+## Install
+
+```bash
+uv tool install git+https://gitlab.com/lab-dev-tools/devtunnel
+```
+
+## Usage
+
+```bash
+# Windows: run from an elevated (Administrator) terminal.
+# Linux: run with sudo.
+
+devtunnel install                       # prompts for a git identity (optional) and an ngrok authtoken
+devtunnel install --non-interactive --authtoken $NGROK_AUTHTOKEN --skip-git-identity
+devtunnel install --dry-run             # show the plan without changing anything
+
+devtunnel up                            # opens a foreground SSH tunnel; Ctrl+C to close
+devtunnel up --port 22 --region eu
+
+devtunnel status                        # what has devtunnel installed here?
+devtunnel doctor                        # has anything drifted since install?
+
+devtunnel uninstall                     # reverses everything, in reverse order
+devtunnel uninstall --keep git          # revert everything except git
+devtunnel uninstall --dry-run
+
+uv tool uninstall devtunnel             # remove the CLI itself, once uninstall is clean
+```
+
+The ngrok authtoken resolves in this order: `NGROK_AUTHTOKEN` environment
+variable → `--authtoken` flag (or a `--config` JSON file's `ngrok_authtoken`
+key) → an interactive prompt. `--non-interactive` fails loudly instead of
+prompting if nothing else supplied it.
+
+## Development
+
+```bash
+uv sync --group dev
+uv run pytest
+uv run ruff check .
+```
+
+## License
+
+Internal tooling — see your organization's usage policy.
