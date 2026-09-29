@@ -17,6 +17,8 @@ is restored to its exact prior state, not just deleted. See
 
 ## Install
 
+Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/):
+
 ```bash
 uv tool install git+https://gitlab.com/lab-dev-tools/devtunnel
 ```
@@ -28,7 +30,7 @@ uv tool install git+https://gitlab.com/lab-dev-tools/devtunnel
 # Linux: run with sudo.
 
 devtunnel install                       # prompts for a git identity (optional) and an ngrok authtoken
-devtunnel install --non-interactive --authtoken $NGROK_AUTHTOKEN --skip-git-identity
+devtunnel install --non-interactive --authtoken $NGROK_AUTHTOKEN   # git identity stays untouched
 devtunnel install --dry-run             # show the plan without changing anything
 
 devtunnel up                            # opens a foreground SSH tunnel; Ctrl+C to close
