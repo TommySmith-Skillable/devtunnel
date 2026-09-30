@@ -1,6 +1,6 @@
 [project]
 name = "devtunnel"
-version = "0.1.0"
+version = "0.0.1"
 description = "Cross-platform CLI that provisions git, ngrok and SSH for a dev tunnel, and fully reverses itself on uninstall."
 readme = "README.md"
 authors = [

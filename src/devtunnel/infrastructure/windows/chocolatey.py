@@ -10,6 +10,8 @@ plan, implemented deliberately rather than left for uninstall to improvise.
 
 from __future__ import annotations
 
+import os
+
 from devtunnel.application.ports.process_runner import ProcessRunnerPort
 from devtunnel.domain.models import PackageSpec, PlatformId
 
@@ -34,7 +36,19 @@ class ChocolateyBootstrap:
         self._process.run(
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script]
         )
+        self._add_to_current_process_path(install_dir)
         return {"install_dir": install_dir}
+
+    @staticmethod
+    def _add_to_current_process_path(install_dir: str) -> None:
+        """The install script updates the *machine* PATH, which this
+        already-running process never re-reads. Without this, every ``choco``
+        call made later in the same run fails with FileNotFoundError even
+        though bootstrap just succeeded."""
+        bin_dir = os.path.join(install_dir, "bin")
+        current = os.environ.get("PATH", "")
+        if bin_dir.lower() not in [p.lower() for p in current.split(os.pathsep) if p]:
+            os.environ["PATH"] = os.pathsep.join(filter(None, [bin_dir, current]))
 
     def teardown(self, details: dict) -> None:
         install_dir = details.get("install_dir", _DEFAULT_INSTALL_DIR)
