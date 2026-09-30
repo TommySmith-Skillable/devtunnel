@@ -17,7 +17,23 @@ is restored to its exact prior state, not just deleted. See
 
 ## Install
 
-Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/):
+Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — uv's
+own installer is a standalone script and needs no git.
+
+```bash
+uv tool install https://github.com/TommySmith-Skillable/devtunnel/archive/refs/tags/v0.0.1.tar.gz
+```
+
+No git required — which matters, since installing git is one of the things
+devtunnel does for you.
+
+On a first-ever `uv tool install`, uv's bin directory may not be on `PATH` yet.
+If `devtunnel` is not found, run `uv tool update-shell` and open a new terminal.
+
+To upgrade to a newer tag, re-run the command above with `--force` and the new
+tag in the URL.
+
+If you already have git and want to track the repo directly:
 
 ```bash
 uv tool install git+https://github.com/TommySmith-Skillable/devtunnel

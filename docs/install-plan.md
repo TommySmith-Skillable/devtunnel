@@ -1,7 +1,8 @@
 # Plan: a git-free install path
 
-Status: proposed, not yet applied. The only change on disk so far is the
-corrected repo URL in `README.md` (see "Already done" below).
+Status: decided and applied to `README.md`. The one remaining step is
+creating the `v0.0.1` tag itself, which has to wait until this change is
+committed and pushed (see "Open decisions" below).
 
 ## Problem
 
@@ -25,14 +26,21 @@ Install from GitHub's source archive instead. uv fetches it over plain HTTPS
 and builds it as a source distribution; git is never invoked.
 
 ```bash
-uv tool install https://github.com/TommySmith-Skillable/devtunnel/archive/refs/heads/main.tar.gz
+uv tool install https://github.com/TommySmith-Skillable/devtunnel/archive/refs/tags/v0.0.1.tar.gz
 ```
+
+Pointing at a tag rather than `refs/heads/main` (see decision 1, now settled)
+means the URL is pinned: it keeps resolving to the same code even after main
+moves on, and a reader can tell which version they installed from the URL
+alone.
 
 ## Verification
 
-Checked on Windows 11, uv 0.9.7, against the public repo. Each `uv tool
-install` ran with `UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` pointed at a throwaway
-directory, so nothing was written to a real tool dir.
+Checked on Windows 11, uv 0.9.7, against the public repo (against `main`,
+since the `v0.0.1` tag does not exist yet — the archive mechanism is identical
+for a tag URL, only the ref differs). Each `uv tool install` ran with
+`UV_TOOL_DIR` and `UV_TOOL_BIN_DIR` pointed at a throwaway directory, so
+nothing was written to a real tool dir.
 
 | Check | Result |
 | --- | --- |
@@ -54,9 +62,9 @@ Two supporting facts, both true of any supported Windows machine:
   runs above cannot distinguish internal unpacking from a call out to it — the
   distinction has no practical consequence, but it was not proven either way.
 
-## Proposed README section
+## Applied README section
 
-Replaces the current `## Install` block.
+Already written into `README.md`'s `## Install` block.
 
 ````markdown
 ## Install
@@ -65,7 +73,7 @@ Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — uv'
 own installer is a standalone script and needs no git.
 
 ```bash
-uv tool install https://github.com/TommySmith-Skillable/devtunnel/archive/refs/heads/main.tar.gz
+uv tool install https://github.com/TommySmith-Skillable/devtunnel/archive/refs/tags/v0.0.1.tar.gz
 ```
 
 No git required — which matters, since installing git is one of the things
@@ -74,7 +82,10 @@ devtunnel does for you.
 On a first-ever `uv tool install`, uv's bin directory may not be on `PATH` yet.
 If `devtunnel` is not found, run `uv tool update-shell` and open a new terminal.
 
-If you already have git and want to track the repo:
+To upgrade to a newer tag, re-run the command above with `--force` and the new
+tag in the URL.
+
+If you already have git and want to track the repo directly:
 
 ```bash
 uv tool install git+https://github.com/TommySmith-Skillable/devtunnel
@@ -87,16 +98,20 @@ between two steps that look continuous.
 
 ## Open decisions
 
-1. **Pinning.** `refs/heads/main` always fetches current main, and uv cannot
-   tell an upgrade from a reinstall, so updating means
-   `uv tool install --force <url>`. Tagging releases and pointing at
-   `refs/tags/v0.1.0.tar.gz` would pin instead. Untagged today.
-2. **Release artifacts.** Building a wheel and attaching it to a GitHub Release
-   gives a versioned `.whl` URL and removes the client-side build step
-   entirely. More repo machinery; worth it if installs become frequent.
-3. **PyPI.** Would reduce the whole thing to `uv tool install devtunnel`.
-   Bigger decision — the name is public and permanent — so it is listed, not
-   recommended.
+1. **Pinning — settled: tags.** Tagging releases and pointing at
+   `refs/tags/<tag>.tar.gz` pins the install, unlike `refs/heads/main` which
+   always fetches current main (and gives uv no way to tell an upgrade from a
+   reinstall). First tag will be `v0.0.1`. The tag does not exist on GitHub
+   yet — it has to be cut from a commit that includes this change, so
+   creating `v0.0.1` and pushing it is the follow-up step once this is
+   committed. Until then the `v0.0.1` URL in `README.md` will 404.
+2. **Release artifacts.** Building a wheel and attaching it to a GitHub
+   Release would give a versioned `.whl` URL and remove the client-side build
+   step entirely. Possible later; not needed now.
+3. **Package management (PyPI or private).** Would reduce the whole thing to
+   `uv tool install devtunnel` (public PyPI) or a private index. Bigger
+   decision — a public name is permanent, and a private index is more
+   infrastructure — so it stays listed, not pursued now.
 
 ## Already done
 
@@ -107,3 +122,6 @@ is in the working tree, uncommitted, alongside this file.
 `docs/architecture.md` also links to gitlab.com, but that reference is to
 `lab-dev-tools/windows-dev` — a distinct prior project — and was deliberately
 left alone.
+
+The `## Install` block itself has also been rewritten per this plan (see
+"Applied README section" above). That edit is likewise uncommitted.
