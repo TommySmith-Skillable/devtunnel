@@ -5,8 +5,8 @@ No business logic lives here -- every command builds an
 :func:`devtunnel.container.build_context`, resolves its inputs, and hands off
 to one use case from :mod:`devtunnel.application.use_cases`.
 
-The surface grew because a tailcat connection is two-sided in a way an ngrok
-tunnel never was. ``install --client`` provisions the other end, ``pair``
+The surface grew because a tailcat connection is two-sided. ``install
+--client`` provisions the other end, ``pair``
 carries both public keys across as one unit, and ``connect`` closes the loop.
 ``allow`` and ``authorize`` exist underneath ``pair`` as escape hatches for
 operators who genuinely need one half at a time -- but ``pair`` is the command
@@ -428,7 +428,7 @@ def allow(
             and r.needs_revert
         ]
         for record in records:
-            StepReverter(ctx.platform).for_record(record).revert(ctx, record)
+            StepReverter().for_record(record).revert(ctx, record)
         if not records:
             # Added by hand, outside devtunnel. Still removable -- just not
             # something there was ever a record of.
@@ -653,7 +653,7 @@ def serve(
         if not records:
             raise _fail("no tunnel service is registered by devtunnel")
 
-        reverter = StepReverter(ctx.platform)
+        reverter = StepReverter()
         for record in reversed(records):
             outcome = reverter.for_record(record).revert(ctx, record)
             if outcome.status.value == "revert_failed":
@@ -759,8 +759,6 @@ def doctor() -> None:
     ctx = build_context()
     report = DiagnoseUseCase(ctx).execute()
 
-    if report.legacy_records:
-        typer.secho(report.legacy_notice, fg="yellow")
     if report.clean:
         typer.secho("No drift detected.", fg="green")
         return

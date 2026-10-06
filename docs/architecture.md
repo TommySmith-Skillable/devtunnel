@@ -11,7 +11,7 @@ provisioned the same environment with two parallel scripts (`setup.ps1`,
    destroying any existing git identity on every re-run.
 3. **Duplicated logic across two languages** that silently drift (the Linux
    script installs `gpg`; the Windows one doesn't. Neither opens a tunnel).
-4. **It never opens the tunnel.** Both stop after `ngrok config add-authtoken`.
+4. **It never opens the tunnel.** Both stop after configuring the provider.
 
 devtunnel replaces both with one Python CLI built so that **every mutation is
 journaled with its prior state before it happens**, and `uninstall` replays
@@ -66,7 +66,6 @@ application/       Ports (interfaces), the Step library, PlanBuilder, use cases.
   allowlist.py       the on-disk node-key allowlist
   paths.py           every location devtunnel owns, resolved once per (platform, scope)
   journals.py        the USER/MACHINE journal split and MergedJournalRepository
-  legacy_revert.py   reverters for ngrok-era journal records (see "Migration" below)
 infrastructure/    Concrete adapters, imported only by the composition root.
   release/           GitHubReleaseInstaller: resolve, download, verify, unpack
   tailcat/           tailcat_keys.py (genkey/parse) + tailcat_tunnel.py (serve lifecycle)
@@ -84,10 +83,11 @@ not. It lives in `application/ports/tunnel_provider.py` because it holds a live
 `ManagedProcess`: the domain layer has no outward dependencies, and a handle to
 a running child process is not a value object.
 
-Gone with ngrok: `infrastructure/ngrok/`, `infrastructure/credentials/`,
+Gone with the provider swap: `infrastructure/credentials/`,
 `infrastructure/debian/apt_repository.py`, `ports/credentials.py` and
-`ports/repository_provider.py`. The ports went with their adapters because
-neither abstraction had a second implementation that was not a test fake.
+`ports/repository_provider.py`, along with the previous tunnel adapter. The
+ports went with their adapters because neither abstraction had a second
+implementation that was not a test fake.
 
 ## The journal: how uninstall stays safe
 
@@ -227,14 +227,10 @@ already — the arch mapping in `infrastructure/release/github_release.py` is
 keyed off `platform.machine()`, and an unrecognised architecture is a named
 failure rather than a silent fallback to amd64.
 
-## Migration from the ngrok era
+## Unrecognized journal records
 
-A journal written by the pre-tailcat version can contain `apt_repo_added` and
-`ngrok:authtoken` records whose reverters no longer exist, and loading one
-mid-uninstall would fail with `NoReverterRegisteredError` — stranding a user
-with an apt repository they cannot remove. `ChangeKind` keeps those members as
-deprecated so old journals still deserialize, `application/legacy_revert.py`
-keeps the reverters, and `devtunnel doctor` detects such a journal and says so.
-The shim is scheduled for deletion in the release after next; it is retained
-because roughly sixty lines of dead-ended code is cheaper than any alternative
-that leaves residue on a machine.
+`StepReverter` reconstructs a step from a record's `kind`/`target` alone. A
+record it does not recognize raises `NoReverterRegisteredError` rather than
+being skipped: a revert that cannot be performed is reported, never silently
+passed over. Every `ChangeKind` the current version can write has a registered
+reverter, so this fires only on a hand-edited or corrupted journal.

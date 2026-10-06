@@ -16,8 +16,8 @@ Two rules drive the layout:
   ``FileSystemPort.real_user_home()``, never ``os.path.expanduser``, because an
   elevated run (``--with-git``, ``--system``) makes ``~`` resolve to root's home
   and silently strands keys and config where the invoking user will never look
-  for them. That bug class predates tailcat -- see the ngrok config writer in
-  git history -- and survives the provider swap unchanged.
+  for them. Nothing about that depends on which tunnel provider is underneath,
+  so it is enforced here, once, for every path devtunnel owns.
 """
 
 from __future__ import annotations

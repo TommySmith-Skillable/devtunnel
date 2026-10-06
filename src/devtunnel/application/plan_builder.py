@@ -48,9 +48,9 @@ class InstallSettings:
     """Everything the plan needs to know, already resolved by the CLI layer.
 
     Resolution (flag / config file / prompt / ``--skip``) happens before this
-    point; the builder itself makes no I/O decisions. The ngrok era had a
-    fourth tier -- the ``NGROK_AUTHTOKEN`` environment variable -- which went
-    with the vendor secret it existed to carry.
+    point; the builder itself makes no I/O decisions. There is no
+    environment-variable tier: it existed only to carry a vendor secret, and
+    tailcat has none.
     """
 
     role: Role = Role.SERVER

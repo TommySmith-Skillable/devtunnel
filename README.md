@@ -238,9 +238,6 @@ What it will **not** remove:
 
 Once uninstall reports clean, `uv tool uninstall devtunnel` removes the CLI.
 
-Upgrading from the ngrok-era version: an old journal is still revertable by this
-version, and `devtunnel doctor` will tell you if it finds one.
-
 ## Security notes
 
 - **`authorized_keys` is the entire authentication boundary.** tailcat serves
@@ -269,7 +266,7 @@ version, and `devtunnel doctor` will tell you if it finds one.
 
 For unattended installs, pass `--config <file>`. Precedence is **flag > config
 file > prompt**; there is no environment-variable tier (it existed only to carry
-the ngrok authtoken, and there is no vendor secret any more).
+a vendor secret, and there is none any more).
 
 ```json
 {
@@ -302,8 +299,7 @@ uv run pytest
 uv run ruff check .
 ```
 
-See [`docs/architecture.md`](docs/architecture.md) for the design, and
-[`docs/tailcat-migration-plan.md`](docs/tailcat-migration-plan.md) for why it
+See [`docs/architecture.md`](docs/architecture.md) for the design and why it
 looks like this.
 
 ## License

@@ -333,10 +333,9 @@ class InstallTailcatBinaryStep(JournaledStep):
 class GenerateTailcatKeyStep(JournaledStep):
     """Creates a tailcat keypair via ``tailcat genkey``.
 
-    The journaling contract is the one the ngrok authtoken step had, and that
-    continuity is deliberate: ``generate_key`` returns the prior state,
-    ``remove_key`` consumes exactly that, and this step never has to know what
-    "prior state" means for the provider underneath.
+    The journaling contract is deliberately narrow: ``generate_key`` returns
+    the prior state, ``remove_key`` consumes exactly that, and this step never
+    has to know what "prior state" means for the provider underneath.
 
     Only *public* material reaches the journal -- the address and the node key.
     The private key at ``~/.config/tailcat/keys/<name>.private.json`` is never

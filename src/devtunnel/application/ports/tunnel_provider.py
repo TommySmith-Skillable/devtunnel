@@ -8,14 +8,14 @@ concern, implemented together by
 
 The key trio -- :meth:`~TunnelProviderPort.has_key`,
 :meth:`~TunnelProviderPort.generate_key`, :meth:`~TunnelProviderPort.remove_key`
--- deliberately keeps the journaling contract the ngrok authtoken trio had:
+-- keeps a deliberately narrow journaling contract:
 ``generate_key`` returns the prior state as a dict, ``remove_key`` consumes
 exactly that dict. That is what lets :class:`~devtunnel.application.steps.JournaledStep`
 stay oblivious to which provider is underneath.
 
-The port survives D4 (ngrok removed, not retained) as a **test seam**, not as
-a provider abstraction: ``FakeTunnelProvider`` is its second implementation
-and the only one that will ever be added.
+The port exists as a **test seam**, not as a provider abstraction:
+``FakeTunnelProvider`` is its second implementation and the only one that will
+ever be added.
 """
 
 from __future__ import annotations

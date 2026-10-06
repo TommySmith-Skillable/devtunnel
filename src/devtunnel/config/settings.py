@@ -1,10 +1,9 @@
 """Optional JSON config file for unattended installs.
 
-Precedence collapsed to **flag > config file > prompt**. The ngrok era had a
-fourth tier, the ``NGROK_AUTHTOKEN`` environment variable, which existed only
-to carry a vendor secret out of a dashboard; tailcat's identity is a keypair
-generated locally, so there is no secret to source and the whole tier went with
-it -- along with the credential chain that implemented it.
+Precedence is **flag > config file > prompt**. There is no environment-variable
+tier: it existed only to carry a vendor secret out of a dashboard, and tailcat's
+identity is a keypair generated locally, so there is no secret to source. The
+credential chain that implemented that tier went with it.
 
 Git identity still has no chain at all: if neither a flag nor the file supplies
 it, devtunnel leaves whatever git identity already exists untouched.

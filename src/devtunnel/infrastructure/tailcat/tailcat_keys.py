@@ -5,18 +5,14 @@ that owns key material;
 :class:`~devtunnel.infrastructure.tailcat.tailcat_tunnel.TailcatTunnelProvider`
 composes it with process lifecycle to satisfy the whole port.
 
-**The elevation bug carried forward from ngrok.** ``ngrok_config.py`` (deleted
-with the provider swap; see it in git history at the commit that removed
-``infrastructure/ngrok/``) existed largely to fix one thing: when the installer
-runs elevated -- ``--with-git``, ``--system``, or a plain ``sudo devtunnel`` --
-``$HOME`` and ``~`` resolve to *root's* home, so the credential lands in
-``/root/.config/...`` and the real user's tool never finds it afterwards. That
-bug class is entirely provider-independent: tailcat resolves its key directory
-from the environment exactly like ngrok did. So every key command here is
-invoked with ``HOME``/``USERPROFILE`` pointed at
+**Elevation and the real user's home.** When the installer runs elevated --
+``--with-git``, ``--system``, or a plain ``sudo devtunnel`` -- ``$HOME`` and
+``~`` resolve to *root's* home, so a key written naively lands in
+``/root/.config/...`` and the real user's tool never finds it afterwards.
+tailcat resolves its key directory from the environment, so every key command
+here is invoked with ``HOME``/``USERPROFILE`` pointed at
 :meth:`~devtunnel.application.ports.filesystem.FileSystemPort.real_user_home`,
-and the resulting directory is chowned back to the real user. Deleting the
-ngrok adapter does not delete the bug.
+and the resulting directory is chowned back to the real user.
 
 **Private key material is never read, copied or journaled** (plan section 13.6).
 ``~/.config/tailcat/keys/<name>.private.json`` holds a WireGuard private key.
@@ -148,10 +144,9 @@ class TailcatKeys:
     def delete(self, name: str) -> None:
         """Run ``tailcat genkey --delete``.
 
-        Deletion goes through tailcat rather than ``rm`` on the key file for the
-        same reason ngrok's authtoken went through ``ngrok config`` rather than
-        a YAML edit: devtunnel never has to know the on-disk layout, and cannot
-        leave an index or sidecar file behind by not knowing about it.
+        Deletion goes through tailcat rather than ``rm`` on the key file so
+        that devtunnel never has to know the on-disk layout, and cannot leave
+        an index or sidecar file behind by not knowing about it.
         """
 
         self._process.run(

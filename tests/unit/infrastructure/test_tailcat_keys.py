@@ -231,7 +231,7 @@ def test_has_key_tests_existence_without_opening_the_key_file(tmp_path):
 
 
 def test_genkey_runs_with_home_pointed_at_the_real_user_home(tmp_path):
-    """The ngrok-era bug, carried forward: under sudo, ``$HOME`` is root's."""
+    """Under sudo, ``$HOME`` is root's -- the key must not land there."""
 
     real_user_home = tmp_path / "home" / "tommy"
     runner = RecordingProcessRunner()

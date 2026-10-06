@@ -1,7 +1,7 @@
 """Installs the tailcat binary from a GitHub Releases artifact.
 
-tailcat is in no distro repository and no Chocolatey feed, so unlike git and
-ngrok it cannot be delegated to a :class:`PackageManagerPort`. This adapter is
+tailcat is in no distro repository and no Chocolatey feed, so unlike git it
+cannot be delegated to a :class:`PackageManagerPort`. This adapter is
 the replacement for that: it resolves the right release asset for the host,
 downloads it, verifies it, unpacks exactly one member, and hands back a journal
 record precise enough to undo all of it.

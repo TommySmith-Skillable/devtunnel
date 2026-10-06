@@ -13,7 +13,7 @@ def test_pending_creates_a_unique_crash_safe_record():
 
 def test_two_pending_records_get_distinct_ids():
     a = ChangeRecord.pending(ChangeKind.PACKAGE_INSTALLED, "package:git")
-    b = ChangeRecord.pending(ChangeKind.PACKAGE_INSTALLED, "package:ngrok")
+    b = ChangeRecord.pending(ChangeKind.PACKAGE_INSTALLED, "package:curl")
 
     assert a.id != b.id
 

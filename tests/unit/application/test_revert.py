@@ -1,9 +1,5 @@
 import pytest
 
-from devtunnel.application.legacy_revert import (
-    RemoveNgrokAptRepositoryStep,
-    RemoveNgrokAuthtokenStep,
-)
 from devtunnel.application.revert import NoReverterRegisteredError, StepReverter
 from devtunnel.application.steps import (
     AddToPathStep,
@@ -18,7 +14,7 @@ from devtunnel.application.steps import (
     SetGitConfigStep,
 )
 from devtunnel.domain.journal import ChangeKind, ChangeRecord
-from devtunnel.domain.models import PlatformId, Scope
+from devtunnel.domain.models import Scope
 
 
 def _record(kind: ChangeKind, target: str, **details) -> ChangeRecord:
@@ -84,40 +80,8 @@ def test_reverter_raises_for_an_unrecognised_target():
         StepReverter().for_record(_record(ChangeKind.CONFIG_KEY_SET, "something-unexpected"))
 
 
-# -- ngrok-era journals (plan section 16) ----------------------------------
-
-
-def test_a_legacy_apt_repository_record_still_has_a_reverter():
-    step = StepReverter().for_record(_record(ChangeKind.APT_REPO_ADDED, "repository:ngrok"))
-
-    assert isinstance(step, RemoveNgrokAptRepositoryStep)
-
-
-def test_a_legacy_authtoken_record_still_has_a_reverter():
-    step = StepReverter().for_record(_record(ChangeKind.CONFIG_KEY_SET, "ngrok:authtoken"))
-
-    assert isinstance(step, RemoveNgrokAuthtokenStep)
-
-
-def test_a_legacy_ngrok_package_record_still_has_a_reverter():
-    step = StepReverter().for_record(_record(ChangeKind.PACKAGE_INSTALLED, "package:ngrok"))
-
-    assert isinstance(step, EnsurePackageStep)
-    assert step.package.key == "ngrok"
-
-
-def test_a_legacy_openssh_server_record_uses_the_capability_path_on_windows():
-    # The live toolkit no longer routes openssh-server to the capability
-    # manager, so handing it to Chocolatey would fail confusingly.
-    reverter = StepReverter(PlatformId.WINDOWS)
-
-    step = reverter.for_record(_record(ChangeKind.PACKAGE_INSTALLED, "package:openssh-server"))
-
-    assert type(step).__name__ == "RemoveWindowsCapabilityStep"
-
-
-def test_a_legacy_sshd_service_record_still_has_a_reverter():
-    step = StepReverter().for_record(_record(ChangeKind.SERVICE_STATE_CHANGED, "service:sshd"))
-
-    assert isinstance(step, EnsureServiceStep)
-    assert step.service.key == "sshd"
+def test_an_unknown_package_has_no_reverter():
+    # Nothing in the catalog answers to this key, so it cannot be reconstructed
+    # into a step -- which is a named failure, not a silent skip.
+    with pytest.raises(NoReverterRegisteredError):
+        StepReverter().for_record(_record(ChangeKind.PACKAGE_INSTALLED, "package:nonesuch"))

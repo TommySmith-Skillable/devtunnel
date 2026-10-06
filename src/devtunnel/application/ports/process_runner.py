@@ -43,9 +43,8 @@ class ManagedProcess(Protocol):
     def read_stderr_line(self, timeout: float | None = None) -> str | None:
         """Next line of stderr, or ``None`` on timeout or EOF.
 
-        ngrok published its address over a local HTTP API; tailcat writes it
-        to stderr at startup, so reading a child's output stopped being an
-        adapter-private detail and became part of this port.
+        tailcat writes its address to stderr at startup, so reading a child's
+        output is not an adapter-private detail -- it is part of this port.
 
         Implementations must not block the caller past ``timeout``: a plain
         ``proc.stderr.readline()`` has no timeout and deadlocks the

@@ -1,5 +1,5 @@
 """Chocolatey adapters: bootstrapping the package manager itself, and
-installing/removing the packages it manages (git, ngrok).
+installing/removing the packages it manages (git).
 
 :class:`ChocolateyBootstrap` exists because Chocolatey has no official
 uninstaller: reversing it means deleting its install directory, clearing the

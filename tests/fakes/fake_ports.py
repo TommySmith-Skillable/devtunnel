@@ -4,8 +4,8 @@ None of these touch the filesystem, network, or a real subprocess -- that is
 what lets the application-layer tests (steps, plan builder, install/uninstall
 round-trip) run instantly and assert on exact state transitions.
 
-``FakeTunnelProvider`` is the surviving justification for ``TunnelProviderPort``
-after D4 removed ngrok: the port is a test seam, not a provider abstraction.
+``FakeTunnelProvider`` is the surviving justification for ``TunnelProviderPort``:
+the port is a test seam, not a provider abstraction.
 """
 
 from __future__ import annotations

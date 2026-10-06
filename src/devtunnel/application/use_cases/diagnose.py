@@ -4,17 +4,13 @@
 installed was later changed or removed by other means. It never fixes drift
 automatically -- it only reports it, since automatically resolving it could
 mean silently reinstalling something the user chose to remove.
-
-It has one new job after the migration: spotting a journal written by the
-ngrok-era devtunnel and saying so plainly, before an upgrade turns a
-recoverable situation into a confusing one.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from devtunnel.application import catalog, legacy_revert
+from devtunnel.application import catalog
 from devtunnel.application.context import ExecutionContext
 from devtunnel.domain.journal import ChangeKind, RecordStatus
 
@@ -29,20 +25,10 @@ class DriftFinding:
 @dataclass(frozen=True, slots=True)
 class DiagnosisReport:
     findings: list[DriftFinding]
-    legacy_records: int = 0
 
     @property
     def clean(self) -> bool:
-        return not self.findings and not self.legacy_records
-
-    @property
-    def legacy_notice(self) -> str:
-        return (
-            "This machine has an ngrok-era devtunnel install "
-            f"({self.legacy_records} record(s)). Run 'devtunnel uninstall' with "
-            "version 0.0.x before upgrading, or run it now -- legacy records are "
-            "still supported."
-        )
+        return not self.findings
 
 
 class DiagnoseUseCase:
@@ -51,13 +37,8 @@ class DiagnoseUseCase:
 
     def execute(self) -> DiagnosisReport:
         findings: list[DriftFinding] = []
-        legacy = 0
 
         for record in self._ctx.journal.load():
-            if legacy_revert.is_legacy(record):
-                legacy += 1
-                continue
-
             if record.status is not RecordStatus.APPLIED:
                 continue
 
@@ -108,9 +89,9 @@ class DiagnoseUseCase:
                     )
                 elif not state.running:
                     # The listener is the thing a user most wants to know the
-                    # truth about -- see plan section 13.7.
+                    # truth about.
                     findings.append(
                         DriftFinding(record.id, record.target, "service is no longer running")
                     )
 
-        return DiagnosisReport(findings, legacy)
+        return DiagnosisReport(findings)

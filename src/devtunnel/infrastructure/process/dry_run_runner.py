@@ -68,7 +68,7 @@ class DryRunManagedProcess:
 class DryRunProcessRunner:
     def __init__(self, delegate: ProcessRunnerPort) -> None:
         # `which()` is read-only, so delegate it for realistic detection
-        # (e.g. "is ngrok already on PATH?") even while dry-running.
+        # (e.g. "is tailcat already on PATH?") even while dry-running.
         self._delegate = delegate
 
     def run(

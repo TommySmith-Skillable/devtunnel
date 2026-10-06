@@ -4,19 +4,18 @@ the address peers reach it on.
 Composed from :class:`~devtunnel.infrastructure.tailcat.tailcat_keys.TailcatKeys`
 for the key half of the port and its own process-lifecycle logic for
 ``start``/``stop`` -- together they satisfy the whole
-:class:`~devtunnel.application.ports.tunnel_provider.TunnelProviderPort`. This
-mirrors the shape the ngrok adapter had, and replaces its two genuine
-weaknesses:
+:class:`~devtunnel.application.ports.tunnel_provider.TunnelProviderPort`.
 
-* **The address no longer comes from scraping, when it can be known.** ngrok's
-  address only existed once the agent published it over a local HTTP API, so
-  every start polled. A tailcat key's address is fixed at generation time, so
-  the persistent path asks :meth:`TailcatKeys.address_for` and never reads a
-  line of output -- which means a change to upstream's banner wording cannot
-  break ``devtunnel up`` for anyone using a saved key.
-* **Failures are no longer opaque.** The ngrok adapter raised
-  ``"ngrok exited early with code 1"`` and discarded the child's stderr, which
-  is exactly the text that says *why*. Here it is drained into the exception.
+Two positions are deliberate:
+
+* **The address is not scraped when it can be known.** A tailcat key's address
+  is fixed at generation time, so the persistent path asks
+  :meth:`TailcatKeys.address_for` and never reads a line of output -- which
+  means a change to upstream's banner wording cannot break ``devtunnel up``
+  for anyone using a saved key.
+* **Failures are never opaque.** A bare ``"exited early with code 1"`` discards
+  the child's stderr, which is exactly the text that says *why*. Here it is
+  drained into the exception.
 """
 
 from __future__ import annotations
@@ -216,9 +215,8 @@ class TailcatTunnelProvider:
         """Attach tailcat's own words to the failure.
 
         This is the whole point: the diagnosis is almost always in the last few
-        lines the child wrote, and discarding them -- as the ngrok adapter did
-        -- turned every failure into a bare exit code the user had to reproduce
-        by hand to understand.
+        lines the child wrote, and discarding them turns every failure into a
+        bare exit code the user has to reproduce by hand to understand.
         """
 
         tail = [line for line in lines[-_MAX_STDERR_CONTEXT_LINES:] if line.strip()]

@@ -19,7 +19,7 @@ Constructor arguments unused by ``undo()`` (e.g. the desired value a
 
 from __future__ import annotations
 
-from devtunnel.application import catalog, legacy_revert
+from devtunnel.application import catalog
 from devtunnel.application.pairing import PairingBundle
 from devtunnel.application.steps import (
     AddToPathStep,
@@ -35,7 +35,7 @@ from devtunnel.application.steps import (
     SetGitConfigStep,
 )
 from devtunnel.domain.journal import ChangeKind, ChangeRecord
-from devtunnel.domain.models import PlatformId, Scope
+from devtunnel.domain.models import Scope
 from devtunnel.domain.plan import Step
 
 
@@ -49,21 +49,13 @@ class NoReverterRegisteredError(LookupError):
 
 
 class StepReverter:
-    def __init__(self, platform: PlatformId = PlatformId.DEBIAN) -> None:
-        # Needed only to route legacy Windows-capability records; the live
-        # reverters are all platform-agnostic by construction.
-        self._platform = platform
+    """Every reverter here is platform-agnostic by construction."""
 
     def for_record(self, record: ChangeRecord) -> Step:
         step = self._live_step(record)
-        if step is not None:
-            return step
-
-        step = legacy_revert.legacy_step_for(record, self._platform)
-        if step is not None:
-            return step
-
-        raise NoReverterRegisteredError(record)
+        if step is None:
+            raise NoReverterRegisteredError(record)
+        return step
 
     # -- the live catalog of reverters -----------------------------------
 
@@ -75,7 +67,7 @@ class StepReverter:
             key = record.target.removeprefix("package:")
             package = catalog.PACKAGES_BY_KEY.get(key)
             if package is None:
-                return None  # may still be an ngrok-era package
+                return None  # not in the catalog: NoReverterRegisteredError
             return EnsurePackageStep(
                 step_id, f"Uninstall {package.display_name}", package, scope=scope
             )

@@ -7,8 +7,8 @@ composition root (:mod:`devtunnel.container`) picks exactly one, based on
 above this module ever branches on platform again.
 
 Two things changed with tailcat. ``repository_provider`` is gone -- the apt
-repository existed solely to install ngrok, and a checksum-verified release
-binary needs no repository on either platform. And each toolkit now holds
+repository existed solely to install the tunnel package, and a
+checksum-verified release binary needs no repository on either platform. And each toolkit now holds
 *two* service managers rather than one, because the whole point of D3 is that
 the tunnel can run as a user-scope unit that needs no elevation, with the
 system-scope manager kept for ``--system``.

@@ -50,7 +50,7 @@ class UninstallReport:
 class UninstallEnvironmentUseCase:
     def __init__(self, ctx: ExecutionContext, reverter: StepReverter | None = None) -> None:
         self._ctx = ctx
-        self._reverter = reverter or StepReverter(ctx.platform)
+        self._reverter = reverter or StepReverter()
 
     def execute(
         self, *, force: bool = False, keep: frozenset[str] = frozenset()
@@ -87,16 +87,15 @@ class UninstallEnvironmentUseCase:
     def _needs_elevation(record: ChangeRecord) -> bool:
         """Whether reverting this one record writes machine-scope state.
 
-        Read from the scope the record was stamped with at apply time. An
-        ngrok-era record predates the stamp and is treated as machine-scope,
-        which is correct -- everything that era wrote needed elevation.
+        Read from the scope the record was stamped with at apply time. Every
+        record the current version writes carries that stamp; an unstamped one
+        falls back to the kinds that are machine-scope by nature, so a missing
+        stamp errs towards demanding elevation rather than failing mid-walk.
         """
 
         scope = record.details.get("scope")
         if scope is None:
             return record.kind in (
-                ChangeKind.APT_REPO_ADDED,
-                ChangeKind.WINDOWS_CAPABILITY_ADDED,
                 ChangeKind.PACKAGE_INSTALLED,
                 ChangeKind.PKGMGR_BOOTSTRAPPED,
             )

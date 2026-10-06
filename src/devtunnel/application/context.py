@@ -6,11 +6,11 @@ platform-specific adapters behind ``toolkit`` (the Abstract Factory) and the
 platform-agnostic ports individually -- see the port docstrings in
 ``application/ports/`` for why each one is shaped the way it is.
 
-The ``credentials`` field is gone with ngrok: the credential chain existed to
-resolve one secret (``NGROK_AUTHTOKEN``) from env var, then flag, then prompt.
-tailcat has no vendor secret -- its identity is a keypair generated locally --
-so the whole tier collapsed to **flag > config file > prompt**, which the CLI
-layer resolves directly.
+There is no ``credentials`` field: the credential chain existed to resolve one
+vendor secret from env var, then flag, then prompt. tailcat has no vendor
+secret -- its identity is a keypair generated locally -- so the whole tier
+collapsed to **flag > config file > prompt**, which the CLI layer resolves
+directly.
 """
 
 from __future__ import annotations

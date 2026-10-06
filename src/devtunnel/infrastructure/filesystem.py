@@ -2,8 +2,8 @@
 
 ``real_user_home``/``take_ownership_for_real_user`` exist specifically to fix
 a bug present in the reference scripts: running the Linux installer with
-``sudo`` makes ``~`` resolve to ``/root``, so a naively-written ngrok config
-lands where the real user's ``ngrok`` binary will never look for it. Resolving
+``sudo`` makes ``~`` resolve to ``/root``, so a naively-written config file
+lands where the real user's tooling will never look for it. Resolving
 ``SUDO_USER`` and chowning the result back is what keeps the file usable
 after the script exits.
 """

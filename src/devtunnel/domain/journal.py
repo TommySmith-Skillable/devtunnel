@@ -41,15 +41,6 @@ class ChangeKind(StrEnum):
     DIR_CREATED = "dir_created"
     CONFIG_KEY_SET = "config_key_set"
 
-    # -- deprecated: ngrok-era kinds -------------------------------------
-    # Retained *only* so a journal written by an ngrok-era devtunnel still
-    # deserialises and can still be reverted. Nothing writes these any more;
-    # their reverters live in application/legacy_revert.py. See the migration
-    # note in docs/tailcat-migration-plan.md section 16 -- delete both in the
-    # release after next.
-    APT_REPO_ADDED = "apt_repo_added"
-    WINDOWS_CAPABILITY_ADDED = "windows_capability_added"
-
 
 class RecordStatus(StrEnum):
     PENDING = "pending"

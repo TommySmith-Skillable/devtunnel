@@ -23,9 +23,7 @@ systemd, not tailcat, and the same class could supervise anything.
 ``--system`` can both put us in -- ``~`` resolves to ``/root``, so the unit
 would land in ``/root/.config/systemd/user`` where the invoking user's systemd
 instance will never look for it, and the install would report success having
-configured nothing. This is the identical bug class
-the deleted ``infrastructure/ngrok/ngrok_config.py`` was written to fix, and it
-survives the provider swap unchanged.
+configured nothing.
 
 **A failed ``loginctl enable-linger`` is surfaced, never swallowed.** Without
 lingering, the user's systemd instance is torn down at logout and the tunnel

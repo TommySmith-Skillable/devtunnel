@@ -7,10 +7,11 @@ agree on the same keys, and what lets ``--skip``/``--keep`` flags refer to
 packages by a single stable name across platforms.
 
 It is deliberately much shorter than it was. tailcat arrives as a verified
-release binary rather than a package, and serves SSH itself -- so ngrok, gpg,
-the OpenSSH *server* and the apt-repository constants all left with it. What
-remains is git (opt-in, the one step that still needs elevation) and the
-OpenSSH *client*, which the client role still needs for ``ssh``/``ssh-keygen``.
+release binary rather than a package, and serves SSH itself -- so the packaged
+tunnel client, gpg, the OpenSSH *server* and the apt-repository constants all
+left with it. What remains is git (opt-in, the one step that still needs
+elevation) and the OpenSSH *client*, which the client role still needs for
+``ssh``/``ssh-keygen``.
 """
 
 from __future__ import annotations
@@ -96,4 +97,4 @@ SERVICES_BY_KEY: dict[str, ServiceSpec] = {TUNNEL_SERVICE.key: TUNNEL_SERVICE}
 # `--ssh-mode=sshd` (fronting the system sshd with `tailcat serve 22`) would
 # restore OPENSSH_SERVER and an `sshd` ServiceSpec here, and give
 # WindowsCapabilityManager a second caller. Both are in git history at the
-# commit that removed them. See docs/tailcat-migration-plan.md section 18.
+# commit that removed them.
