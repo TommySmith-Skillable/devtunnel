@@ -1,6 +1,6 @@
 [project]
 name = "devtunnel"
-version = "0.0.1"
+version = "0.0.2"
 description = "Cross-platform CLI that sets up both ends of a tailcat SSH tunnel -- no account, no elevation -- and fully reverses itself on uninstall."
 readme = "README.md"
 authors = [

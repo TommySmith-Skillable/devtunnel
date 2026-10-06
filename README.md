@@ -15,7 +15,7 @@ Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — uv'
 own installer is a standalone script and needs no git.
 
 ```bash
-uv tool install https://github.com/TommySmith-Skillable/devtunnel/archive/refs/tags/v0.0.1.tar.gz
+uv tool install https://github.com/TommySmith-Skillable/devtunnel/archive/refs/tags/v0.0.2.tar.gz
 ```
 
 On a first-ever `uv tool install`, uv's bin directory may not be on `PATH` yet.
