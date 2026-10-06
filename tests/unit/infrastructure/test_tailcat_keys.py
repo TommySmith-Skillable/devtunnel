@@ -9,6 +9,7 @@ code that opens ``<name>.private.json``, these tests fail with an
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass, field
 
 import pytest
@@ -18,6 +19,23 @@ from devtunnel.infrastructure.tailcat.tailcat_keys import TailcatKeys
 
 SERVER_ADDRESS = "tcomFwWCCcjS5nKNqAod034nWoJZW0LZqDhhC8U_dKdnDRYQ8uNGFpGQEu"
 NODE_KEY = "nodekey:" + "cfb6bfa77a0654d7450947fd6acef17d2cd848da1d30b2540b13dac272ddfd16"
+
+
+def config_home(root):
+    """Where Go's ``os.UserConfigDir`` -- and so tailcat -- puts its keys.
+
+    Spelled out per platform rather than reusing the adapter's own
+    ``_config_home`` so that these tests still fail if that method starts
+    answering something else; a test that computes the expected value the same
+    way the code does cannot catch the code being wrong.
+    """
+
+    if os.name == "nt":
+        return root / "AppData" / "Roaming"
+    if sys.platform == "darwin":
+        return root / "Library" / "Application Support"
+    return root / ".config"
+
 
 
 @dataclass
@@ -188,7 +206,7 @@ def test_generate_captures_both_an_address_and_a_node_key_when_both_are_printed(
 
 def test_generate_records_an_existing_key_as_preexisting(tmp_path):
     keys, _, _ = make_keys(tmp_path)
-    key_path = tmp_path / ".config" / "tailcat" / "keys" / "default.private.json"
+    key_path = config_home(tmp_path) / "tailcat" / "keys" / "default.private.json"
     key_path.parent.mkdir(parents=True)
     key_path.write_text("{}", encoding="utf-8")
 
@@ -217,7 +235,7 @@ def test_no_private_key_material_reaches_the_returned_details(tmp_path):
 
 def test_has_key_tests_existence_without_opening_the_key_file(tmp_path):
     keys, _, _ = make_keys(tmp_path)
-    key_path = tmp_path / ".config" / "tailcat" / "keys" / "default.private.json"
+    key_path = config_home(tmp_path) / "tailcat" / "keys" / "default.private.json"
     key_path.parent.mkdir(parents=True)
 
     assert keys.has_key("default") is False
@@ -260,13 +278,13 @@ def test_generate_hands_the_key_directory_back_to_the_real_user(tmp_path):
 
     keys.generate("default")
 
-    assert filesystem.owned == [str(tmp_path / ".config" / "tailcat" / "keys")]
+    assert filesystem.owned == [str(config_home(tmp_path) / "tailcat" / "keys")]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits do not exist on Windows")
 def test_generate_tightens_the_key_file_and_directory_permissions(tmp_path):
     keys, _, _ = make_keys(tmp_path)
-    keys_dir = tmp_path / ".config" / "tailcat" / "keys"
+    keys_dir = config_home(tmp_path) / "tailcat" / "keys"
     keys_dir.mkdir(parents=True)
     key_file = keys_dir / "default.private.json"
     key_file.write_text("{}", encoding="utf-8")
@@ -324,3 +342,46 @@ def test_parse_address_decodes_the_json_tailcat_prints(tmp_path):
 
     assert parsed == {"ServerPublic": "nodekey:abc"}
     assert runner.last.argv == ["/opt/devtunnel/bin/tailcat", "parse", SERVER_ADDRESS]
+
+
+# --------------------------------------------------------------------------
+# Regression: the key directory is platform-specific, not always ~/.config
+# --------------------------------------------------------------------------
+
+
+def test_keys_dir_follows_the_platform_config_directory(tmp_path):
+    """``~/.config`` is the Linux answer only.
+
+    tailcat resolves its key directory with Go's ``os.UserConfigDir``, which is
+    ``%AppData%`` on Windows and ``~/Library/Application Support`` on macOS.
+    Hardcoding ``.config`` put :meth:`has_key` on a path nothing ever wrote to
+    on those platforms, so an install that had just generated a key still saw
+    no key -- and the re-run of ``genkey`` that followed exits 1 rather than
+    clobbering one without ``--force``.
+    """
+
+    real_user_home = tmp_path / "home" / "tommy"
+    keys = TailcatKeys(RecordingProcessRunner(), RecordingFileSystem(str(real_user_home)))
+
+    assert keys.keys_dir() == str(config_home(real_user_home) / "tailcat" / "keys")
+
+
+def test_genkey_pins_the_config_home_as_well_as_the_home(tmp_path):
+    """Pinning ``HOME`` alone leaves the key directory ambient.
+
+    The process runner merges these over ``os.environ``, and Go consults
+    ``%AppData%``/``$XDG_CONFIG_HOME`` *before* falling back to the home
+    directory. Left unset, an inherited value would send tailcat somewhere
+    :meth:`keys_dir` is not looking, and the two would disagree silently.
+    """
+
+    real_user_home = tmp_path / "home" / "tommy"
+    runner = RecordingProcessRunner()
+    keys = TailcatKeys(runner, RecordingFileSystem(str(real_user_home)))
+
+    keys.generate("default")
+
+    expected = str(config_home(real_user_home))
+    assert runner.last.env["APPDATA"] == expected
+    assert runner.last.env["XDG_CONFIG_HOME"] == expected
+    assert keys.keys_dir().startswith(expected)

@@ -15,7 +15,9 @@ here is invoked with ``HOME``/``USERPROFILE`` pointed at
 and the resulting directory is chowned back to the real user.
 
 **Private key material is never read, copied or journaled** (plan section 13.6).
-``~/.config/tailcat/keys/<name>.private.json`` holds a WireGuard private key.
+``<config-dir>/tailcat/keys/<name>.private.json`` holds a WireGuard private
+key (see :meth:`TailcatKeys._config_home` -- the directory is platform-specific,
+not ``~/.config`` everywhere).
 This module tests that file for *existence* and fixes its *mode*; it never opens
 it. The address and the ``nodekey:<hex>`` are public material and safe to put in
 a journal record, and both are obtained from the CLI's own output -- which is
@@ -29,6 +31,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 
 from devtunnel.application import catalog
 from devtunnel.application.ports.filesystem import FileSystemPort
@@ -72,7 +75,37 @@ class TailcatKeys:
         """The directory tailcat saves keys in, resolved against the *real*
         user's home so an elevated run still points at the right place."""
 
-        return os.path.join(self._filesystem.real_user_home(), ".config", "tailcat", "keys")
+        return os.path.join(self._config_home(), "tailcat", "keys")
+
+    def _config_home(self) -> str:
+        """Mirror of Go's ``os.UserConfigDir``, which is how tailcat picks the
+        parent of its key directory.
+
+        This is **not** ``~/.config`` everywhere -- that is the Linux answer
+        only. Go returns ``%AppData%`` on Windows and
+        ``~/Library/Application Support`` on macOS, so hardcoding ``.config``
+        made :meth:`has_key` answer ``False`` on two of the three platforms
+        even with the key sitting on disk: the install step then re-ran
+        ``genkey``, which refuses to clobber an existing key without
+        ``--force`` and exits 1, so a second ``devtunnel install`` could never
+        succeed.
+
+        Every branch is derived from
+        :meth:`~devtunnel.application.ports.filesystem.FileSystemPort.real_user_home`
+        rather than from ``%AppData%``/``$XDG_CONFIG_HOME`` directly, for the
+        same reason the rest of this module pins ``HOME``: under an elevated
+        run those variables hold the *elevating* user's paths, which is the
+        exact bug the real-user indirection exists to prevent. The pinning in
+        :meth:`_home_env` is what keeps tailcat's own answer in step with this
+        one, so the two cannot drift.
+        """
+
+        home = self._filesystem.real_user_home()
+        if os.name == "nt":
+            return os.path.join(home, "AppData", "Roaming")
+        if sys.platform == "darwin":
+            return os.path.join(home, "Library", "Application Support")
+        return os.path.join(home, ".config")
 
     def key_path(self, name: str) -> str:
         return os.path.join(self.keys_dir(), f"{name}.private.json")
@@ -161,11 +194,19 @@ class TailcatKeys:
 
         Read from ``genkey --list``, never by re-running ``genkey`` (which would
         mint a new key) and never by opening ``<name>.private.json``. If
-        ``--list`` does not report the key -- it is absent, or upstream changed
-        the listing format -- this returns ``None`` and the caller falls back to
-        the address cached in the journal record's ``details`` at generation
-        time. That fallback is the authoritative cache; this method is the live
-        cross-check.
+        ``--list`` does not report the value this returns ``None``, and the
+        caller falls back to the address cached in the journal record's
+        ``details`` at generation time.
+
+        **As of tailcat 0.7.0 that fallback is the only path that resolves.**
+        ``genkey --list`` prints one key name per line and no public material
+        at all, so the pattern below cannot match and this method always
+        answers ``None``. It is kept rather than deleted because the journal
+        cache is the *authoritative* source either way -- see
+        :func:`~devtunnel.cli.app._cached_public_value` -- and because a later
+        tailcat that enriches the listing should start cross-checking it
+        without a code change. What callers must not do is treat ``None`` here
+        as "no such key": it is the normal answer.
         """
 
         return self._match_in_listing(name, _ADDRESS_RE)
@@ -173,9 +214,12 @@ class TailcatKeys:
     def node_key(self, name: str) -> str | None:
         """This machine's ``nodekey:<hex>`` for ``name``, for a peer's allowlist.
 
-        Same sourcing and same fallback as :meth:`address_for`. A node key is
-        public material -- it is the thing a peer puts in ``--allow`` -- so
-        reporting it is safe; the private half it derives from is not read.
+        Same sourcing and same fallback as :meth:`address_for`, including the
+        0.7.0 caveat: the listing carries no node key, so this returns ``None``
+        on every healthy install and the journal cache is what actually answers.
+        A node key is public material -- it is the thing a peer puts in
+        ``--allow`` -- so reporting it is safe; the private half it derives
+        from is not read.
         """
 
         return self._match_in_listing(name, _NODE_KEY_RE)
@@ -228,7 +272,20 @@ class TailcatKeys:
         """
 
         home = self._filesystem.real_user_home()
-        return {"HOME": home, "USERPROFILE": home}
+        config_home = self._config_home()
+        # HOME/USERPROFILE alone do not settle it. ProcessRunner *merges* these
+        # over os.environ, so an ambient %AppData% or $XDG_CONFIG_HOME -- which
+        # Go consults ahead of the home directory on Windows and Linux -- would
+        # otherwise survive and send tailcat somewhere keys_dir() is not
+        # looking. Pinning both makes keys_dir() authoritative rather than a
+        # guess about upstream's resolution order. The variables that do not
+        # apply to the running platform are simply ignored by it.
+        return {
+            "HOME": home,
+            "USERPROFILE": home,
+            "APPDATA": config_home,
+            "XDG_CONFIG_HOME": config_home,
+        }
 
     def _secure_key_files(self, name: str) -> None:
         """Force ``0700`` on the key directory and ``0600`` on the key file.

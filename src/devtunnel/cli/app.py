@@ -35,6 +35,7 @@ from devtunnel.application.use_cases.uninstall_environment import UninstallEnvir
 from devtunnel.config.settings import FileConfig
 from devtunnel.container import build_context
 from devtunnel.domain.errors import DevtunnelError
+from devtunnel.domain.journal import ChangeKind
 from devtunnel.domain.models import GitIdentity, Role, TunnelSpec
 
 app = typer.Typer(
@@ -780,11 +781,64 @@ def _run_foreground(argv: list[str]) -> int:
     return subprocess.call(argv)
 
 
+def _cached_public_value(ctx, key_name: str, field: str) -> str | None:
+    """The address or node key ``genkey`` printed when it minted ``key_name``.
+
+    ``KeyGenerationStep`` copies both public identifiers into the journal
+    record at generation time precisely so they can be recovered later without
+    re-running a key command (re-running ``genkey`` would mint a *new* key, and
+    the private half is never opened). That cache is the authoritative source:
+    ``tailcat genkey --list`` prints key *names* and nothing else, so the live
+    listing cannot supply these values at all.
+
+    The newest matching record wins, and ``details`` is preferred over
+    ``prior_state`` because a regenerated key writes a fresh ``details`` while
+    ``prior_state`` describes the world before that regeneration.
+    """
+
+    target = f"tailcatkey:{key_name}"
+    for record in reversed(ctx.journal.load()):
+        if record.kind is not ChangeKind.KEY_GENERATED or record.target != target:
+            continue
+        value = record.details.get(field) or record.prior_state.get(field)
+        if value:
+            return value
+    return None
+
+
+def _resolve_node_key(ctx, key_name: str) -> str:
+    """This machine's ``nodekey:<hex>``, from the journal, then the provider.
+
+    The journal is consulted *first* rather than as a rescue: the provider can
+    only report what ``genkey --list`` prints, and upstream's listing carries
+    just the key name. Asking it first would mean every lookup failed on a
+    perfectly healthy install -- which is exactly what it did, turning the last
+    step of ``install --client`` into a traceback over state that was sitting
+    in the journal the whole time. The provider stays as the fallback so that a
+    future tailcat with a richer listing, or a key generated outside the
+    journal, still resolves.
+
+    A genuine miss is raised as :class:`DevtunnelError` so callers that already
+    handle it -- :func:`_print_pairing_bundle` among them -- render a sentence
+    instead of a stack trace.
+    """
+
+    cached = _cached_public_value(ctx, key_name, "node_key")
+    if cached:
+        return cached
+    try:
+        return ctx.tunnel_provider.node_key(key_name)
+    except RuntimeError as exc:
+        raise DevtunnelError(
+            f"no node key recorded for {key_name!r}: {exc}"
+        ) from exc
+
+
 def _local_bundle(ctx, key_name: str, label: str | None):
     import socket
 
-    node_key = ctx.tunnel_provider.node_key(key_name)
-    identity = ctx.paths.default_ssh_identity()
+    node_key = _resolve_node_key(ctx, key_name)
+    identity = ctx.paths.resolve_ssh_identity(ctx.filesystem)
     public = (ctx.filesystem.read_text(f"{identity}.pub") or "").strip()
     if not public:
         raise DevtunnelError(
@@ -824,7 +878,9 @@ def _print_pairing_bundle(ctx, key_name: str) -> None:
 
 
 def _print_server_summary(ctx, key_name: str) -> None:
-    value = ctx.tunnel_provider.address_for(key_name)
+    value = _cached_public_value(ctx, key_name, "address") or ctx.tunnel_provider.address_for(
+        key_name
+    )
     typer.secho("Install complete.", fg="green")
     if value:
         typer.echo(f"Your address: {value}")

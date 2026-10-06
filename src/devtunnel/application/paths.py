@@ -51,12 +51,52 @@ class DevtunnelPaths:
         return self.user_state_dir if scope is Scope.USER else self.machine_state_dir
 
     def default_ssh_identity(self) -> str:
+        """The identity devtunnel *generates* when the user has none.
+
+        This is a fixed name, not a lookup: it is the answer to "what should I
+        create?". Anything asking "what is this machine actually offering?"
+        wants :meth:`resolve_ssh_identity`, because an adopted key is usually
+        not this one.
+        """
+
         return os.path.join(self.ssh_dir, "id_ed25519")
 
+    def resolve_ssh_identity(self, filesystem: FileSystemPort) -> str:
+        """The identity this machine actually presents, adopted or generated.
 
-_CANDIDATE_SSH_IDENTITIES = ("id_ed25519", "id_ecdsa", "id_rsa")
+        ``EnsureSshKeypairStep`` adopts the first of
+        :data:`CANDIDATE_SSH_IDENTITIES` that exists rather than clobbering a
+        key the user already had, so on a machine with only ``id_rsa`` that is
+        what got enrolled. Readers that went to
+        :meth:`default_ssh_identity` instead were looking at a path that step
+        had deliberately *not* created -- ``pair export`` and the tail of
+        ``install --client`` both reported "no SSH public key ... run
+        'devtunnel install --client' first" on a machine where install had just
+        succeeded by adopting ``id_rsa``.
+
+        The candidate order is shared with that step precisely so the two
+        cannot drift: whatever the step would adopt is what this returns.
+        Falls back to :meth:`default_ssh_identity` when nothing exists, so the
+        caller's own "missing public key" message still names the file a user
+        would expect to find.
+        """
+
+        for name in CANDIDATE_SSH_IDENTITIES:
+            candidate = os.path.join(self.ssh_dir, name)
+            if filesystem.exists(candidate):
+                return candidate
+        return self.default_ssh_identity()
+
+
+CANDIDATE_SSH_IDENTITIES = ("id_ed25519", "id_ecdsa", "id_rsa")
 """Checked in this order when deciding whether the client already has a usable
-identity to adopt. ed25519 first because it is what devtunnel would generate."""
+identity to adopt. ed25519 first because it is what devtunnel would generate.
+
+The single source of truth for that order: :class:`DevtunnelPaths` resolves a
+machine's identity with it and
+:class:`~devtunnel.application.steps.EnsureSshKeypairStep` adopts with it, so a
+key the step enrols is always the key a reader finds.
+"""
 
 
 def resolve_paths(

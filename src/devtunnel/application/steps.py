@@ -26,6 +26,7 @@ from dataclasses import replace
 from devtunnel.application.allowlist import Allowlist
 from devtunnel.application.context import ExecutionContext
 from devtunnel.application.pairing import PairingBundle
+from devtunnel.application.paths import CANDIDATE_SSH_IDENTITIES
 from devtunnel.application.ports.service_manager import ServiceState
 from devtunnel.domain.errors import StepFailedError
 from devtunnel.domain.events import StepEvent
@@ -43,7 +44,12 @@ _SSH_KEY_TYPES = (
     "sk-ecdsa-sha2-nistp256@openssh.com",
 )
 
-_ADOPTABLE_IDENTITIES = ("id_ed25519", "id_ecdsa", "id_rsa")
+_ADOPTABLE_IDENTITIES = CANDIDATE_SSH_IDENTITIES
+"""Re-exported under the local name this module already used. The order lives
+in :mod:`devtunnel.application.paths` so that the step's adopt decision and
+``DevtunnelPaths.resolve_ssh_identity`` can never disagree about which key this
+machine offers -- when they did, install adopted ``id_rsa`` and every reader
+went looking for ``id_ed25519``."""
 """Checked in this order. ed25519 first because it is what devtunnel would
 generate, so a machine devtunnel has already touched adopts its own key."""
 
@@ -338,7 +344,7 @@ class GenerateTailcatKeyStep(JournaledStep):
     has to know what "prior state" means for the provider underneath.
 
     Only *public* material reaches the journal -- the address and the node key.
-    The private key at ``~/.config/tailcat/keys/<name>.private.json`` is never
+    The private key at ``<config-dir>/tailcat/keys/<name>.private.json`` is never
     read, never copied and never backed up (see plan section 13.6).
     """
 
