@@ -1,7 +1,7 @@
 """Port for running external processes.
 
-Every adapter that shells out (Chocolatey, apt, git, ngrok, sc.exe,
-systemctl...) does so through this one seam. That is what makes ``--dry-run``
+Every adapter that shells out (Chocolatey, apt, git, tailcat, sc.exe,
+systemctl, schtasks...) does so through this one seam. That is what makes ``--dry-run``
 possible as a Null Object
 (:class:`~devtunnel.infrastructure.process.dry_run_runner.DryRunProcessRunner`)
 and what lets the unit tests assert on exact argv without a subprocess ever
@@ -28,7 +28,7 @@ class CompletedProcess:
 
 
 class ManagedProcess(Protocol):
-    """A handle to a long-running child process (e.g. the ngrok agent)."""
+    """A handle to a long-running child process (e.g. ``tailcat serve``)."""
 
     @property
     def pid(self) -> int: ...
@@ -39,6 +39,20 @@ class ManagedProcess(Protocol):
     def terminate(self) -> None: ...
 
     def wait(self, timeout: float | None = None) -> int: ...
+
+    def read_stderr_line(self, timeout: float | None = None) -> str | None:
+        """Next line of stderr, or ``None`` on timeout or EOF.
+
+        ngrok published its address over a local HTTP API; tailcat writes it
+        to stderr at startup, so reading a child's output stopped being an
+        adapter-private detail and became part of this port.
+
+        Implementations must not block the caller past ``timeout``: a plain
+        ``proc.stderr.readline()`` has no timeout and deadlocks the
+        wait-for-address loop against a process that simply never speaks.
+        The real adapter pumps each stream on a daemon thread into a queue.
+        Lines come back with their trailing newline stripped.
+        """
 
 
 class ProcessRunnerPort(Protocol):

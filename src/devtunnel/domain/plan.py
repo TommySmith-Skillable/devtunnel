@@ -4,7 +4,7 @@ A :class:`Step` is a Command -- it knows how to ``apply`` itself and, given
 the :class:`~devtunnel.domain.journal.ChangeRecord` it produced, how to
 ``revert`` itself. :class:`Plan` (and the :class:`StepGroup` nodes nested
 inside it) is the Composite that lets :meth:`StepGroup.walk` flatten an
-arbitrarily nested tree of named groups ("Install ngrok", "Configure SSH", ...)
+arbitrarily nested tree of named groups ("Install tailcat", "Configure peers", ...)
 into the ordered sequence of leaf steps that actually get executed -- the same
 traversal drives both real execution and ``--dry-run`` rendering.
 

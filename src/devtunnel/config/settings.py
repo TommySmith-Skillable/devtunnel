@@ -1,11 +1,13 @@
 """Optional JSON config file for unattended installs.
 
-Precedence, end to end: CLI flag > config file > (for the ngrok authtoken
-only) the ``NGROK_AUTHTOKEN`` environment variable > interactive prompt. The
-first three are resolved here and in ``cli/app.py``; the last two are the
-``CredentialChain``'s job (see :mod:`devtunnel.infrastructure.credentials.chain`).
-Git identity has no chain -- if neither a flag nor the file supplies it,
-devtunnel leaves whatever git identity already exists untouched.
+Precedence collapsed to **flag > config file > prompt**. The ngrok era had a
+fourth tier, the ``NGROK_AUTHTOKEN`` environment variable, which existed only
+to carry a vendor secret out of a dashboard; tailcat's identity is a keypair
+generated locally, so there is no secret to source and the whole tier went with
+it -- along with the credential chain that implemented it.
+
+Git identity still has no chain at all: if neither a flag nor the file supplies
+it, devtunnel leaves whatever git identity already exists untouched.
 """
 
 from __future__ import annotations
@@ -15,11 +17,27 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from devtunnel.application import catalog
+
 
 class FileConfig(BaseModel):
+    role: str = "server"
+    with_git: bool = False
     git_name: str | None = None
     git_email: str | None = None
-    ngrok_authtoken: str | None = None
+    tailcat_version: str = catalog.TAILCAT_VERSION
+    key_name: str | None = None
+    """``None`` means "whichever default matches the role" -- ``default`` for a
+    server, ``client-default`` for a client -- rather than forcing a config file
+    to restate tailcat's own naming."""
+
+    region: str | None = None
+    fixed_region: bool = False
+    authorized_keys: list[str] = Field(default_factory=list)
+    allow: list[str] = Field(default_factory=list)
+    peers: list[str] = Field(default_factory=list)
+    ssh_identity: str | None = None
+    add_to_path: bool = False
     skip_packages: list[str] = Field(default_factory=list)
 
     @classmethod

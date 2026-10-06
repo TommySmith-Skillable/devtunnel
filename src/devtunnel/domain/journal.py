@@ -29,13 +29,26 @@ class ChangeKind(StrEnum):
 
     PKGMGR_BOOTSTRAPPED = "pkgmgr_bootstrapped"
     PACKAGE_INSTALLED = "package_installed"
-    APT_REPO_ADDED = "apt_repo_added"
-    WINDOWS_CAPABILITY_ADDED = "windows_capability_added"
+    BINARY_INSTALLED = "binary_installed"
+    """A standalone executable devtunnel downloaded and unpacked (tailcat)."""
+
+    KEY_GENERATED = "key_generated"
+    """A tailcat keypair created by ``tailcat genkey``."""
+
     SERVICE_STATE_CHANGED = "service_state_changed"
     FILE_CREATED = "file_created"
     FILE_MODIFIED = "file_modified"
     DIR_CREATED = "dir_created"
     CONFIG_KEY_SET = "config_key_set"
+
+    # -- deprecated: ngrok-era kinds -------------------------------------
+    # Retained *only* so a journal written by an ngrok-era devtunnel still
+    # deserialises and can still be reverted. Nothing writes these any more;
+    # their reverters live in application/legacy_revert.py. See the migration
+    # note in docs/tailcat-migration-plan.md section 16 -- delete both in the
+    # release after next.
+    APT_REPO_ADDED = "apt_repo_added"
+    WINDOWS_CAPABILITY_ADDED = "windows_capability_added"
 
 
 class RecordStatus(StrEnum):

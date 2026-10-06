@@ -11,16 +11,46 @@ fake in its place.
 from __future__ import annotations
 
 import os
+import queue
 import shutil
 import subprocess
+import threading
 from collections.abc import Mapping, Sequence
 
 from devtunnel.application.ports.process_runner import CompletedProcess, ManagedProcess
 
+_EOF = object()
+"""Sentinel pushed by a reader thread when its stream closes, so that EOF and
+"nothing yet" are distinguishable inside the queue rather than both surfacing as
+a timeout."""
+
 
 class SubprocessManagedProcess:
+    """A spawned child whose output streams are pumped by daemon threads.
+
+    **Why threads and a queue at all.** tailcat announces the tunnel's address
+    on *stderr* at startup, so ``start()`` has to wait for a specific line while
+    still being able to give up. ``proc.stderr.readline()`` has no timeout:
+    against a child that starts, says nothing and never exits -- a tailcat that
+    cannot reach the data plane, a binary waiting on a prompt -- it blocks the
+    caller forever, and the ``timeout`` argument on
+    :meth:`~devtunnel.application.ports.tunnel_provider.TunnelProviderPort.start`
+    becomes a lie. Pushing every line into a :class:`queue.Queue` from a reader
+    thread turns the wait into ``queue.get(timeout=...)``, which is the one form
+    of this that can actually time out.
+
+    **Both** streams are pumped, not just stderr: an unread pipe fills its OS
+    buffer and then blocks the *child* on its next write, which is the same
+    deadlock arriving from the other direction.
+
+    The threads are ``daemon=True`` so that a child which hangs -- or which we
+    deliberately left running -- can never hold the interpreter open at exit.
+    """
+
     def __init__(self, popen: subprocess.Popen) -> None:
         self._popen = popen
+        self._stdout_lines = self._pump(popen.stdout)
+        self._stderr_lines = self._pump(popen.stderr)
 
     @property
     def pid(self) -> int:
@@ -37,7 +67,57 @@ class SubprocessManagedProcess:
 
     @property
     def stdout(self):
+        """The raw stdout pipe, kept for callers that predate the pump.
+
+        Prefer :meth:`read_stdout_line`: the reader thread owns this stream now,
+        so reading it directly races with the pump for lines.
+        """
+
         return self._popen.stdout
+
+    def read_stderr_line(self, timeout: float | None = None) -> str | None:
+        return self._next_line(self._stderr_lines, timeout)
+
+    def read_stdout_line(self, timeout: float | None = None) -> str | None:
+        return self._next_line(self._stdout_lines, timeout)
+
+    @staticmethod
+    def _next_line(lines: queue.Queue, timeout: float | None) -> str | None:
+        try:
+            item = lines.get() if timeout is None else lines.get(timeout=timeout)
+        except queue.Empty:
+            return None
+        if item is _EOF:
+            # EOF is sticky: put it back so every later call reports it too,
+            # instead of the second caller blocking on a stream that is closed.
+            lines.put(_EOF)
+            return None
+        return item
+
+    @staticmethod
+    def _pump(stream) -> queue.Queue:
+        lines: queue.Queue = queue.Queue()
+        if stream is None:
+            lines.put(_EOF)
+            return lines
+
+        def reader() -> None:
+            try:
+                while True:
+                    line = stream.readline()
+                    if not line:
+                        break
+                    lines.put(line.rstrip("\r\n"))
+            except (ValueError, OSError):
+                # The stream was closed underneath us (terminate, interpreter
+                # teardown). That is an EOF, not a failure worth propagating
+                # from a thread nobody is joining.
+                pass
+            finally:
+                lines.put(_EOF)
+
+        threading.Thread(target=reader, daemon=True).start()
+        return lines
 
 
 class SubprocessProcessRunner:
@@ -73,7 +153,21 @@ class SubprocessProcessRunner:
             list(argv),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            # Decoding is pinned here rather than left to the locale: tailcat's
+            # startup banner opens with a non-ASCII emoji and a Windows console
+            # is rarely UTF-8, so the default encoding would raise
+            # UnicodeDecodeError on the one line we most need to read.
+            # `errors="replace"` means a mojibake'd glyph costs us nothing --
+            # the address we parse out of that line is pure ASCII.
+            #
+            # Of the two correct routes (binary pipes decoded in each reader
+            # thread, or text pipes configured here) this one is chosen because
+            # it keeps decoding in a single place that both streams and the
+            # legacy `.stdout` property share, and keeps the reader threads
+            # free of anything but line handling.
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env=self._merged_env(env),
         )
         return SubprocessManagedProcess(popen)

@@ -53,10 +53,18 @@ class PackageSpec:
 
 @dataclass(frozen=True, slots=True)
 class ServiceSpec:
-    """A system service devtunnel may enable/start (e.g. sshd)."""
+    """A service devtunnel may register, enable and start.
+
+    ``scope`` decides *which* service manager runs it: a ``USER``-scope
+    service is a systemd **user** unit or a per-user Scheduled Task, neither
+    of which needs elevation; a ``MACHINE``-scope service is a real system
+    unit or a Windows service and does. ``PlatformToolkit.service_manager_for``
+    is the lookup that turns this field into the right adapter.
+    """
 
     key: str
     display_name: str
+    scope: Scope = Scope.MACHINE
     windows_service_name: str | None = None
     systemd_unit: str | None = None
 
@@ -78,10 +86,53 @@ class GitIdentity:
         return self.name is None and self.email is None
 
 
+class Role(StrEnum):
+    """Which half of a tailcat connection this machine is being set up as.
+
+    A machine may be both, but each role is installed separately: the server
+    role generates a listening key and an ``authorized_keys`` boundary, the
+    client role generates a node key *and* an SSH identity to hand over as a
+    pairing bundle.
+    """
+
+    SERVER = "server"
+    CLIENT = "client"
+
+
 @dataclass(frozen=True, slots=True)
 class TunnelSpec:
-    """Parameters for an ngrok TCP tunnel fronting a local SSH daemon."""
+    """Parameters for one ``tailcat serve`` invocation.
 
-    local_port: int = 22
+    Every field maps to exactly one tailcat flag or positional argument; the
+    single place that turns this into an argv is
+    :meth:`devtunnel.infrastructure.tailcat.tailcat_tunnel.TailcatTunnelProvider.build_argv`,
+    so the CLI surface of a pre-1.0 dependency is pinned down in one method.
+    """
+
+    serve: tuple[str, ...] = ("ssh",)
+    """What to expose: ``("ssh",)``, ``("no-auth-ssh",)``, or ports such as
+    ``("8080,8443",)``."""
+
+    key_name: str | None = "default"
+    """Saved key to listen with. ``None`` means an ephemeral key
+    (``--key=new``), whose address is only knowable by reading tailcat's
+    startup banner."""
+
+    allow: tuple[str, ...] = ()
+    """``nodekey:<hex>`` values permitted to connect. **Empty means the
+    address itself is the only credential** -- see ``--open``."""
+
+    authorized_keys: tuple[str, ...] = ()
+    """Paths and/or ``user@github`` sources for the SSH authentication
+    boundary. Only meaningful when serving ``ssh``."""
+
     region: str | None = None
-    protocol: str = "tcp"
+    bind: str | None = None
+    forced_command: str | None = None
+    """Passed after ``--``; restricts the peer to this one command."""
+
+    @property
+    def is_open(self) -> bool:
+        """True when no allowlist is set, i.e. the address is the credential."""
+
+        return not self.allow

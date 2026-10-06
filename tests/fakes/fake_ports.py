@@ -3,21 +3,69 @@
 None of these touch the filesystem, network, or a real subprocess -- that is
 what lets the application-layer tests (steps, plan builder, install/uninstall
 round-trip) run instantly and assert on exact state transitions.
+
+``FakeTunnelProvider`` is the surviving justification for ``TunnelProviderPort``
+after D4 removed ngrok: the port is a test seam, not a provider abstraction.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 
 from devtunnel.application.ports.process_runner import CompletedProcess
 from devtunnel.application.ports.service_manager import ServiceState
-from devtunnel.domain.models import PlatformId
+from devtunnel.domain.models import PlatformId, Scope
+
+FAKE_ADDRESS = "tcFAKEADDRESSFAKEADDRESSFAKEADDRESS"
+FAKE_NODE_KEY = "nodekey:" + "ab" * 32
+
+
+class FakeManagedProcess:
+    """A long-running child whose stderr is a scripted list of lines.
+
+    ``read_stderr_line`` returning ``None`` once the script is exhausted is
+    what lets a test drive the wait-for-address loop all the way to its
+    timeout branch without any real waiting.
+    """
+
+    def __init__(self, stderr_lines: Sequence[str] = (), exit_code: int | None = None) -> None:
+        self._lines = list(stderr_lines)
+        self._exit_code = exit_code
+        self.terminated = False
+        self.waited = False
+        self.stderr_reads = 0
+
+    @property
+    def pid(self) -> int:
+        return 4242
+
+    def poll(self) -> int | None:
+        return self._exit_code
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self._exit_code = -15
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.waited = True
+        return self._exit_code or 0
+
+    def read_stderr_line(self, timeout: float | None = None) -> str | None:
+        self.stderr_reads += 1
+        return self._lines.pop(0) if self._lines else None
 
 
 class FakeProcessRunner:
-    def __init__(self) -> None:
+    def __init__(self, *, missing: Sequence[str] = ()) -> None:
         self.calls: list[list[str]] = []
+        self.envs: list[Mapping[str, str] | None] = []
         self.responses: dict[tuple[str, ...], CompletedProcess] = {}
+        self.spawned: list[list[str]] = []
+        self.spawn_result: FakeManagedProcess | None = None
+        # Executables `which` should report as absent -- how a test says
+        # "this machine has no ssh-keygen" without touching a real PATH.
+        self.missing = set(missing)
 
     def run(
         self,
@@ -29,15 +77,19 @@ class FakeProcessRunner:
         timeout: float | None = None,
     ) -> CompletedProcess:
         self.calls.append(list(argv))
+        self.envs.append(env)
         key = tuple(argv)
         if key in self.responses:
             return self.responses[key]
         return CompletedProcess(tuple(argv), 0, "", "")
 
     def spawn(self, argv: Sequence[str], *, env: Mapping[str, str] | None = None):
-        raise NotImplementedError("not exercised by unit tests")
+        self.spawned.append(list(argv))
+        return self.spawn_result or FakeManagedProcess()
 
     def which(self, executable: str) -> str | None:
+        if executable in self.missing:
+            return None
         return f"/usr/bin/{executable}"
 
 
@@ -69,18 +121,25 @@ class FakeFileSystem:
     def __init__(self) -> None:
         self.files: dict[str, str] = {}
         self.dirs: set[str] = set()
+        self.modes: dict[str, int] = {}
+        self.owned: list[str] = []
 
     def exists(self, path: str) -> bool:
         return path in self.files or path in self.dirs
 
     def read_text(self, path: str) -> str | None:
-        return self.files.get(path)
+        value = self.files.get(path)
+        return value if isinstance(value, str) else None
 
     def write_text(self, path: str, content: str, *, mode: int | None = None) -> None:
         self.files[path] = content
+        if mode is not None:
+            self.modes[path] = mode
 
     def write_bytes(self, path: str, content: bytes, *, mode: int | None = None) -> None:
         self.files[path] = content  # type: ignore[assignment]
+        if mode is not None:
+            self.modes[path] = mode
 
     def remove_file(self, path: str) -> None:
         self.files.pop(path, None)
@@ -111,7 +170,7 @@ class FakeFileSystem:
         return "/home/fake"
 
     def take_ownership_for_real_user(self, path: str) -> None:
-        return None
+        self.owned.append(path)
 
 
 class FakePrompter:
@@ -162,24 +221,10 @@ class FakeBootstrap:
         self.bootstrapped = False
 
 
-class FakeRepositoryProvider:
-    def __init__(self) -> None:
-        self.registered: set[str] = set()
-
-    def is_registered(self, name: str) -> bool:
-        return name in self.registered
-
-    def register(self, name: str) -> dict:
-        self.registered.add(name)
-        return {"created_dir": True, "dir_path": "/fake/keyrings"}
-
-    def unregister(self, name: str, details: dict) -> None:
-        self.registered.discard(name)
-
-
 class FakeServiceManager:
     def __init__(self) -> None:
         self._states: dict[str, ServiceState] = {}
+        self.last_linger_error: str | None = None
 
     def get_state(self, service) -> ServiceState:
         return self._states.get(
@@ -195,40 +240,133 @@ class FakeServiceManager:
 
 class FakeToolkit:
     def __init__(
-        self, platform: PlatformId = PlatformId.DEBIAN, has_repository: bool = True
+        self, platform: PlatformId = PlatformId.DEBIAN, *, elevated: bool = True
     ) -> None:
         self.platform = platform
         self.package_bootstrap = FakeBootstrap()
-        self.service_manager = FakeServiceManager()
-        self.repository_provider = FakeRepositoryProvider() if has_repository else None
         self.manager = FakePackageManager(platform)
+        self.user_service = FakeServiceManager()
+        self.system_service = FakeServiceManager()
+        self.elevated = elevated
+
+    def service_manager_for(self, scope: Scope):
+        return self.user_service if scope is Scope.USER else self.system_service
+
+    @property
+    def service_manager(self):
+        return self.system_service
 
     def manager_for(self, package_key: str):
         return self.manager
 
     def is_elevated(self) -> bool:
-        return True
+        return self.elevated
 
     def elevation_hint(self) -> str:
-        return "fake: already elevated"
+        return "fake: elevation required"
+
+
+class FakeBinaryInstaller:
+    """Stands in for the GitHub release installer.
+
+    Records whether a pre-existing binary was adopted, because that flag is
+    what ``uninstall`` consults before deleting anything.
+    """
+
+    def __init__(self, *, preexisting: bool = False, version: str = "0.7.0") -> None:
+        self.installed: dict[str, dict] = {}
+        self.preexisting = preexisting
+        self.version = version
+
+    def is_installed(self, target_path: str) -> bool:
+        return target_path in self.installed
+
+    def installed_version(self, target_path: str) -> str | None:
+        return self.version if target_path in self.installed else None
+
+    def install(self, target_path: str) -> dict:
+        details = {
+            "path": target_path,
+            "version": self.version,
+            "preexisting": self.preexisting,
+            "sha256": "0" * 64,
+        }
+        self.installed[target_path] = details
+        return details
+
+    def uninstall(self, details: dict) -> None:
+        if details.get("preexisting"):
+            return  # never ours to remove
+        self.installed.pop(details.get("path", ""), None)
 
 
 class FakeTunnelProvider:
     def __init__(self) -> None:
-        self.configured = False
+        self.keys: dict[str, dict] = {}
+        self.started: list = []
+        self.stopped: list = []
 
-    def is_authtoken_configured(self) -> bool:
-        return self.configured
+    def has_key(self, name: str) -> bool:
+        return name in self.keys
 
-    def configure_authtoken(self, token: str) -> dict:
-        self.configured = True
-        return {"had_prior_token": False}
+    def generate_key(
+        self,
+        name: str,
+        *,
+        client: bool = False,
+        region: str | None = None,
+        fixed_region: bool = False,
+    ) -> dict:
+        prior = {
+            "name": name,
+            "client": client,
+            "existed": name in self.keys,
+            "address": None if client else FAKE_ADDRESS,
+            "node_key": FAKE_NODE_KEY,
+            "region": region,
+            "fixed_region": fixed_region,
+        }
+        self.keys[name] = prior
+        return prior
 
-    def remove_authtoken(self, prior_state: dict) -> None:
-        self.configured = False
+    def remove_key(self, prior_state: dict) -> None:
+        if prior_state.get("existed"):
+            return  # the key predated devtunnel
+        self.keys.pop(prior_state.get("name", ""), None)
+
+    def node_key(self, name: str) -> str:
+        return FAKE_NODE_KEY
+
+    def address_for(self, name: str) -> str | None:
+        entry = self.keys.get(name)
+        return entry.get("address") if entry else None
 
     def start(self, spec, *, timeout: float = 15.0):
-        raise NotImplementedError("not exercised by unit tests")
+        from devtunnel.application.ports.tunnel_provider import TunnelHandle
+
+        process = FakeManagedProcess()
+        handle = TunnelHandle(address=FAKE_ADDRESS, spec=spec, process=process)
+        self.started.append(handle)
+        return handle
 
     def stop(self, handle) -> None:
-        return None
+        self.stopped.append(handle)
+
+
+def fake_paths(home: str = "/home/fake"):
+    """A ``DevtunnelPaths`` with every location under one fake home."""
+
+    from devtunnel.application.paths import DevtunnelPaths
+
+    state = os.path.join(home, ".local", "share", "devtunnel")
+    return DevtunnelPaths(
+        home=home,
+        user_state_dir=state,
+        machine_state_dir="/var/lib/devtunnel",
+        binary_path=os.path.join(state, "bin", "tailcat"),
+        allowlist_path=os.path.join(state, "allow.list"),
+        authorized_keys_path=os.path.join(home, ".ssh", "authorized_keys"),
+        ssh_dir=os.path.join(home, ".ssh"),
+        cache_dir=os.path.join(state, "cache"),
+        tailcat_keys_dir=os.path.join(home, ".config", "tailcat", "keys"),
+    )
