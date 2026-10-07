@@ -178,6 +178,18 @@ fact a single journal genuinely has.
   escape hatch — an escape hatch here is indistinguishable from not having the
   check. The version is pinned in `catalog.py` by default so an upstream
   release cannot silently change what lands on a fleet.
+- **Release hosts are verified against the OS trust store, not OpenSSL's copy
+  of it.** `urlopen` would otherwise check the chain against the roots OpenSSL
+  snapshotted at startup, and on Windows that snapshot is a poor stand-in for
+  what the machine trusts: a freshly imaged host ships almost no roots and
+  leaves SChannel to fetch them on demand, and a TLS-inspecting proxy presents
+  a private root supplied by the same lazy machinery. Both produce `unable to
+  get local issuer certificate` for a chain Edge and `curl` accept without
+  complaint. `truststore` delegates verification to the platform, so devtunnel
+  trusts exactly what the host trusts. `DEVTUNNEL_CA_BUNDLE` (or `SSL_CERT_FILE`)
+  names a PEM bundle for hosts whose store cannot be fixed — it *replaces* OS
+  verification rather than disabling it, and there is no way to turn
+  verification off.
 - **User-scope services, so the default path needs no elevation.** On Linux,
   `SystemdUserServiceManager` writes `~/.config/systemd/user/…` and runs
   `systemctl --user`. A user instance is torn down at logout unless the account

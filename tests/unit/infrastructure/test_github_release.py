@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import ssl
 import tarfile
+import urllib.error
 import zipfile
 
 import pytest
@@ -13,7 +15,10 @@ from devtunnel.infrastructure.release.github_release import (
     ChecksumMismatchError,
     GitHubReleaseInstaller,
     ReleaseArtifactError,
+    ReleaseTrustError,
     UnsupportedArchitectureError,
+    _build_tls_context,
+    _tls_context,
 )
 from tests.fakes.fake_ports import FakeFileSystem, FakeProcessRunner
 
@@ -402,3 +407,75 @@ def test_installed_version_is_none_when_the_binary_cannot_answer():
     )
 
     assert installer.installed_version(TARGET) is None
+
+
+# -- TLS trust ------------------------------------------------------------
+
+
+def ssl_url_error(message: str = "unable to get local issuer certificate") -> urllib.error.URLError:
+    """The shape urlopen raises when the chain cannot be verified: the
+    SSLCertVerificationError arrives wrapped as the URLError's reason."""
+    reason = ssl.SSLCertVerificationError(message)
+    reason.verify_message = message
+    return urllib.error.URLError(reason)
+
+
+def test_release_hosts_are_verified_against_the_operating_system_store():
+    """The bug this guards: OpenSSL's snapshot of the Windows store is empty on
+    a freshly imaged host, so verification has to go through the platform."""
+    _build_tls_context.cache_clear()
+    context = _tls_context()
+
+    assert type(context).__module__.startswith("truststore")
+
+
+def test_an_explicit_ca_bundle_replaces_operating_system_verification(tmp_path, monkeypatch):
+    # Any real certificate will do -- load_verify_locations rejects an empty
+    # file, and the point of the test is which store gets consulted.
+    roots = ssl.create_default_context().get_ca_certs(binary_form=True)
+    if not roots:
+        pytest.skip("this host has no root certificates to borrow for the bundle")
+    bundle = tmp_path / "corp-root.pem"
+    bundle.write_text(ssl.DER_cert_to_PEM_cert(roots[0]))
+    monkeypatch.setenv("DEVTUNNEL_CA_BUNDLE", str(bundle))
+    _build_tls_context.cache_clear()
+
+    context = _tls_context()
+
+    assert type(context).__module__.startswith("ssl")
+    assert context.verify_mode is ssl.CERT_REQUIRED
+
+
+def test_a_certificate_failure_names_the_host_and_the_way_out(tmp_path):
+    class UnverifiableInstaller(GitHubReleaseInstaller):
+        def _open(self, url, timeout, context):
+            raise ssl_url_error()
+
+    installer = UnverifiableInstaller(
+        EmptyPathProcessRunner(), FakeFileSystem(), system="Linux", machine="x86_64"
+    )
+
+    with pytest.raises(ReleaseTrustError) as caught:
+        installer._fetch_bytes("https://objects.githubusercontent.com/tailcat.tar.gz")
+
+    message = str(caught.value)
+    assert "objects.githubusercontent.com" in message
+    assert "unable to get local issuer certificate" in message
+    assert "DEVTUNNEL_CA_BUNDLE" in message
+
+
+def test_an_http_error_is_not_mistaken_for_a_trust_failure():
+    """HTTPError is a URLError whose reason is a plain string -- a 404 on a
+    missing asset must keep its own handling rather than be reported as a
+    certificate problem."""
+
+    class MissingAssetInstaller(GitHubReleaseInstaller):
+        def _open(self, url, timeout, context):
+            raise urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+
+    installer = MissingAssetInstaller(
+        EmptyPathProcessRunner(), FakeFileSystem(), system="Linux", machine="x86_64"
+    )
+
+    with pytest.raises(urllib.error.HTTPError):
+        installer._fetch_bytes("https://github.com/x/releases/download/v0.7.0/missing.tar.gz")

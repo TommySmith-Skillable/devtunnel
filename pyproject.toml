@@ -12,6 +12,7 @@ dependencies = [
     "rich>=13.7",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
+    "truststore>=0.10",
 ]
 
 [project.scripts]

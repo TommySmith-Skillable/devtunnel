@@ -32,6 +32,17 @@ natively, which matters on the corporate networks this tool is most often run
 on, so no proxy plumbing is written here. Every call is funnelled through
 :meth:`_fetch_bytes` so unit tests replace one small method and never open a
 socket.
+
+*Certificates are verified by the operating system, not by OpenSSL's copy of
+its store.* ``urlopen`` would otherwise verify against the roots OpenSSL
+snapshotted at context-creation time, and on Windows that snapshot is a poor
+stand-in for what the machine actually trusts: a freshly imaged host ships
+almost no roots and relies on SChannel fetching them on demand, and a corporate
+TLS-inspecting proxy presents a private root that the same lazy machinery is
+expected to supply. In both cases OpenSSL reports ``unable to get local issuer
+certificate`` for a chain the rest of the machine accepts without complaint.
+:mod:`truststore` hands verification to SChannel (and to the platform
+equivalent elsewhere), so devtunnel trusts exactly what the host trusts.
 """
 
 from __future__ import annotations
@@ -42,10 +53,14 @@ import json
 import os
 import platform
 import re
+import ssl
 import tarfile
+import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from dataclasses import dataclass, field
+from functools import cache
 from pathlib import Path
 
 from devtunnel.application import catalog
@@ -83,6 +98,13 @@ _PUBLISHED_COMBINATIONS = frozenset(
 _CHECKSUMS_FILE = "checksums.txt"
 _LATEST = "latest"
 _NETWORK_TIMEOUT_SECONDS = 60.0
+
+#: Escape hatch for hosts whose OS store genuinely cannot be fixed -- an air
+#: gapped image, or a proxy whose root is distributed as a file rather than
+#: installed. It points at a PEM bundle and replaces OS verification entirely;
+#: it does not disable it. ``SSL_CERT_FILE`` is honoured too because anything
+#: else on the machine that speaks OpenSSL already reads it.
+_CA_BUNDLE_ENV = "DEVTUNNEL_CA_BUNDLE"
 _SEMVER = re.compile(r"\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?")
 _DRIVE_LETTER = re.compile(r"^[A-Za-z]:")
 
@@ -95,9 +117,62 @@ class ChecksumMismatchError(DevtunnelError):
     """Raised when an artifact does not match its published SHA-256."""
 
 
+class ReleaseTrustError(DevtunnelError):
+    """Raised when the TLS certificate of a release host cannot be verified.
+
+    Separate from :class:`ReleaseArtifactError` because the operator action is
+    different in kind: nothing is wrong with the release, the machine cannot
+    establish who it is talking to, and the fix is in the host's trust
+    configuration rather than anywhere in devtunnel.
+    """
+
+
 class ReleaseArtifactError(DevtunnelError):
     """Raised when a release artifact is malformed: a missing checksum line, an
     archive with no tailcat member, or a member name that tries to escape."""
+
+
+@cache
+def _build_tls_context(ca_bundle: str | None) -> ssl.SSLContext:
+    """One context per bundle, built once and reused.
+
+    An explicit bundle wins outright: an operator who names a file has made a
+    decision, and quietly unioning it with the OS store would hide the case
+    where the named file is the wrong one. Otherwise verification is delegated
+    to the platform, and only if :mod:`truststore` is somehow absent does this
+    fall back to OpenSSL's own snapshot of the store -- the behaviour that
+    fails on an unpopulated Windows image in the first place.
+    """
+    if ca_bundle:
+        return ssl.create_default_context(cafile=ca_bundle)
+    try:
+        import truststore
+    except ImportError:  # pragma: no cover - truststore is a hard dependency
+        return ssl.create_default_context()
+    return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+
+
+def _tls_context() -> ssl.SSLContext:
+    bundle = os.environ.get(_CA_BUNDLE_ENV) or os.environ.get("SSL_CERT_FILE")
+    return _build_tls_context(bundle or None)
+
+
+def _certificate_failure(error: urllib.error.URLError) -> str | None:
+    """The verification message, or ``None`` if this was not a TLS failure.
+
+    ``HTTPError`` is a ``URLError`` whose ``reason`` is a string, so a 404
+    falls through here untouched and keeps its own handling.
+    """
+    reason = getattr(error, "reason", None)
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return getattr(reason, "verify_message", None) or str(reason)
+    if isinstance(reason, ssl.SSLError):
+        return str(reason)
+    return None
+
+
+def _host_of(url: str) -> str:
+    return urllib.parse.urlsplit(url).hostname or url
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,8 +431,26 @@ class GitHubReleaseInstaller:
         environment on its own, which is most of the reason this is a stdlib
         call rather than a hand-rolled client.
         """
-        with urllib.request.urlopen(url, timeout=_NETWORK_TIMEOUT_SECONDS) as response:
-            return response.read()
+        try:
+            with self._open(url, _NETWORK_TIMEOUT_SECONDS, _tls_context()) as response:
+                return response.read()
+        except urllib.error.URLError as error:
+            verification = _certificate_failure(error)
+            if verification is None:
+                raise
+            raise ReleaseTrustError(
+                f"could not verify the TLS certificate of {_host_of(url)}: {verification}. "
+                f"This host does not trust the certificate chain that server presented -- "
+                f"usually a Windows image whose root certificates were never populated, or "
+                f"a TLS-inspecting proxy whose root is not installed on this machine. "
+                f"Install the missing root in the system trust store, or point "
+                f"{_CA_BUNDLE_ENV} at a PEM bundle that contains it."
+            ) from error
+
+    def _open(self, url: str, timeout: float, context: ssl.SSLContext):
+        """The socket itself, split out so the failure modes above can be
+        exercised without one."""
+        return urllib.request.urlopen(url, timeout=timeout, context=context)
 
     def _fetch_text(self, url: str) -> str:
         return self._fetch_bytes(url).decode("utf-8")
