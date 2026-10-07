@@ -215,7 +215,7 @@ def key_list() -> None:
     table.add_column("Address")
     for name in (catalog.DEFAULT_SERVER_KEY, catalog.DEFAULT_CLIENT_KEY):
         if ctx.tunnel_provider.has_key(name):
-            table.add_row(name, ctx.tunnel_provider.address_for(name) or "-")
+            table.add_row(name, _resolve_address(ctx, name) or "-")
     console.print(table)
 
 
@@ -224,7 +224,7 @@ def address(key_name: str | None = typer.Option(None, "--key-name")) -> None:
     """Print the stable address peers connect to."""
 
     ctx = build_context()
-    value = ctx.tunnel_provider.address_for(key_name or catalog.DEFAULT_SERVER_KEY)
+    value = _resolve_address(ctx, key_name or catalog.DEFAULT_SERVER_KEY)
     if not value:
         raise _fail("no saved address; run 'devtunnel install' first")
     typer.echo(value)
@@ -301,7 +301,7 @@ def pair_add(
     if outcome.status.value == "skipped":
         typer.secho("  (this peer was already authorised)", fg="yellow")
 
-    server_address = ctx.tunnel_provider.address_for(catalog.DEFAULT_SERVER_KEY)
+    server_address = _resolve_address(ctx, catalog.DEFAULT_SERVER_KEY)
     if server_address:
         typer.echo("\nSend them back:")
         typer.echo(f"  devtunnel connect {server_address}")
@@ -524,7 +524,7 @@ def up(
     # Print the connection command before the tunnel is confirmed up: with a
     # persistent key the address is already known, so there is no reason to
     # make the user wait for a banner to find out where to connect.
-    known = ctx.tunnel_provider.address_for(name) if name else None
+    known = _resolve_address(ctx, name) if name else None
     if known:
         typer.secho(f"devtunnel connect {known}", fg="green")
         typer.echo(f"  (raw: tailcat ssh {known})")
@@ -806,6 +806,26 @@ def _cached_public_value(ctx, key_name: str, field: str) -> str | None:
     return None
 
 
+def _resolve_address(ctx, key_name: str) -> str | None:
+    """This machine's ``tc...`` address, from the journal, then the provider.
+
+    Same ordering -- and the same reason -- as :func:`_resolve_node_key`:
+    ``tailcat genkey --list`` prints key names and no public material, so the
+    live listing answers ``None`` on every healthy install while the value sits
+    in the journal record written at generation time. Asking the provider first
+    also shells out to the tailcat binary, which a reader command has no need
+    to do and which is not necessarily at the path *this* context resolved --
+    a ``--system`` install puts it somewhere a plain ``devtunnel pair add``
+    does not look. Every caller that wants an address goes through here, so
+    none of them can reintroduce either problem.
+    """
+
+    cached = _cached_public_value(ctx, key_name, "address")
+    if cached:
+        return cached
+    return ctx.tunnel_provider.address_for(key_name)
+
+
 def _resolve_node_key(ctx, key_name: str) -> str:
     """This machine's ``nodekey:<hex>``, from the journal, then the provider.
 
@@ -878,9 +898,7 @@ def _print_pairing_bundle(ctx, key_name: str) -> None:
 
 
 def _print_server_summary(ctx, key_name: str) -> None:
-    value = _cached_public_value(ctx, key_name, "address") or ctx.tunnel_provider.address_for(
-        key_name
-    )
+    value = _resolve_address(ctx, key_name)
     typer.secho("Install complete.", fg="green")
     if value:
         typer.echo(f"Your address: {value}")

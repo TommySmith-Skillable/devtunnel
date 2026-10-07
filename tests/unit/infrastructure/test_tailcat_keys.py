@@ -50,10 +50,13 @@ class RecordingProcessRunner:
     listing: str = ""
     parse_output: str = "{}"
     returncode: int = 0
+    raises: Exception | None = None
     invocations: list[Invocation] = field(default_factory=list)
 
     def run(self, argv, *, check=True, input=None, env=None, timeout=None):
         self.invocations.append(Invocation(list(argv), dict(env) if env is not None else None))
+        if self.raises is not None:
+            raise self.raises
         return CompletedProcess(tuple(argv), self.returncode, self._stdout_for(argv), "")
 
     def spawn(self, argv, *, env=None):
@@ -333,6 +336,20 @@ def test_address_for_returns_none_when_the_listing_command_fails(tmp_path):
     keys, _, _ = make_keys(tmp_path, listing=f"default\t{SERVER_ADDRESS}\n", returncode=1)
 
     assert keys.address_for("default") is None
+
+
+def test_address_for_returns_none_when_the_binary_is_not_installed(tmp_path):
+    """Popen raises OSError for a binary that is not there, and ``check=False``
+    does not cover it: a reader command resolves the user-scope path even on a
+    ``--system`` install, so "not there" is an ordinary outcome. It used to
+    surface as a traceback out of the tail of ``pair add``, after the peer had
+    already been authorised."""
+
+    keys, runner, _ = make_keys(tmp_path)
+    runner.raises = FileNotFoundError(2, "The system cannot find the file specified")
+
+    assert keys.address_for("default") is None
+    assert keys.node_key("default") is None
 
 
 def test_parse_address_decodes_the_json_tailcat_prints(tmp_path):

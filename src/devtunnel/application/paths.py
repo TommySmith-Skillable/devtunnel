@@ -99,6 +99,35 @@ key the step enrols is always the key a reader finds.
 """
 
 
+def _installed_binary(
+    filesystem: FileSystemPort,
+    scope: Scope,
+    *,
+    user: str,
+    machine: str,
+) -> str:
+    """Where tailcat is, which is not always where this scope would put it.
+
+    ``--system`` is on the *install* command only; every command that reads or
+    runs afterwards -- ``pair add``, ``up``, ``connect`` -- takes no scope flag
+    and so resolves user scope. On a host installed machine-wide (what
+    ``scripts/install-on-azure-vm.ps1`` does) that pointed every one of them at
+    a user-scope path nothing had ever written, and invoking it raised a bare
+    ``FileNotFoundError``.
+
+    So the installed binary wins over the one this scope would choose, and only
+    when the scope's own path is absent -- a user-scope install is still
+    preferred by a user-scope run, which is what keeps a machine with both from
+    silently switching to the elevated copy. Nothing else in
+    :class:`DevtunnelPaths` is probed this way: the rest are locations devtunnel
+    *writes*, and a write belongs to its scope regardless of what exists.
+    """
+
+    if scope is Scope.USER and not filesystem.exists(user) and filesystem.exists(machine):
+        return machine
+    return user if scope is Scope.USER else machine
+
+
 def resolve_paths(
     platform: PlatformId,
     filesystem: FileSystemPort,
@@ -115,18 +144,20 @@ def resolve_paths(
         program_files = os.environ.get("PROGRAMFILES", r"C:\Program Files")
         user_state = os.path.join(local_app_data, "devtunnel")
         machine_state = os.path.join(program_data, "devtunnel")
-        binary = (
-            os.path.join(user_state, "bin", "tailcat.exe")
-            if scope is Scope.USER
-            else os.path.join(program_files, "devtunnel", "tailcat.exe")
+        binary = _installed_binary(
+            filesystem,
+            scope,
+            user=os.path.join(user_state, "bin", "tailcat.exe"),
+            machine=os.path.join(program_files, "devtunnel", "tailcat.exe"),
         )
     else:
         user_state = os.path.join(home, ".local", "share", "devtunnel")
         machine_state = "/var/lib/devtunnel"
-        binary = (
-            os.path.join(user_state, "bin", "tailcat")
-            if scope is Scope.USER
-            else "/usr/local/bin/tailcat"
+        binary = _installed_binary(
+            filesystem,
+            scope,
+            user=os.path.join(user_state, "bin", "tailcat"),
+            machine="/usr/local/bin/tailcat",
         )
 
     return DevtunnelPaths(

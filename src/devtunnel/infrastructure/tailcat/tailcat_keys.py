@@ -239,11 +239,24 @@ class TailcatKeys:
     # -- internals -------------------------------------------------------
 
     def _match_in_listing(self, name: str, pattern: re.Pattern[str]) -> str | None:
-        result = self._process.run(
-            [self._binary_path, "genkey", "--list"],
-            check=False,
-            env=self._home_env(),
-        )
+        # ``check=False`` covers a tailcat that ran and said no; it does not
+        # cover a tailcat that never ran. The binary is invoked by the absolute
+        # path *this* context resolved, and a reader command resolves the
+        # user-scope path even on a machine installed with ``--system``, so
+        # "not there" is an ordinary outcome here -- Popen raises OSError for
+        # it, which turned the tail of ``pair add`` into a traceback after the
+        # peer had already been authorised. A lookup that cannot run answers
+        # the same ``None`` as a lookup that found nothing; callers already
+        # treat that as "ask the journal instead", which is where the value
+        # actually lives.
+        try:
+            result = self._process.run(
+                [self._binary_path, "genkey", "--list"],
+                check=False,
+                env=self._home_env(),
+            )
+        except OSError:
+            return None
         if not result.ok:
             return None
 

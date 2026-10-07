@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from devtunnel.cli.app import _cached_public_value, _resolve_node_key
+from devtunnel.cli.app import _cached_public_value, _resolve_address, _resolve_node_key
 from devtunnel.domain.errors import DevtunnelError
 from devtunnel.domain.journal import ChangeKind, ChangeRecord, RecordStatus
 
@@ -169,3 +169,34 @@ def test_a_missing_field_falls_through_rather_than_returning_empty():
     )
 
     assert _resolve_node_key(ctx, "client-default") == NODE_KEY
+
+
+def test_the_address_resolver_prefers_the_journal_over_the_provider():
+    """``pair add`` prints "Send them back: devtunnel connect <address>" at the
+    end. Asking the provider for that address shells out to the tailcat binary
+    by the path the *current* context resolved -- user scope, even on a host
+    installed with ``--system`` -- and the listing could not supply the value
+    anyway. The journal has it, so the subprocess never needs to run."""
+
+    ctx = ctx_with(
+        [key_record("default", details={"address": ADDRESS})],
+        address_value="tcSOMETHINGELSE0000000000000000000000",
+    )
+
+    assert _resolve_address(ctx, "default") == ADDRESS
+    assert ctx.tunnel_provider.calls == []
+
+
+def test_the_address_resolver_falls_back_to_the_provider():
+    ctx = ctx_with([], address_value=ADDRESS)
+
+    assert _resolve_address(ctx, "default") == ADDRESS
+
+
+def test_the_address_resolver_answers_none_rather_than_raising():
+    """A host with neither a cached nor a listed address still finishes the
+    command; the caller simply omits the "send them back" line."""
+
+    ctx = ctx_with([])
+
+    assert _resolve_address(ctx, "default") is None
